@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+*.so
+*.pyd
+*.dll
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+
+# Project data
+.atulya-launch/
+*.db
+*.sqlite
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+*.log
+
+# Config overrides
+config.local.yaml
+*.local.yaml
+
+# Backups
+backups/
+*.tar.gz
+*.zip
+
+# SSL artifacts (don't commit keys!)
+letsencrypt/
+acme/
+*.pem
+*.key
+*.csr
+
+# Secrets
+.env
+.env.*

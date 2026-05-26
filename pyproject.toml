@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "atulya-launch"
+dynamic = ["version"]
+description = "Lightweight cross-platform server / hosting management CLI"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "Atulya Tantra", email = "dev@atulya.launch"},
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: System Administrators",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Topic :: System :: Systems Administration",
+]
+dependencies = [
+    "click>=8.0",
+    "rich>=12.0",
+    "python-dotenv>=0.20",
+    "pyyaml>=6.0",
+    "requests>=2.28",
+    "aiohttp>=3.8",
+    "jinja2>=3.1",
+    "cryptography>=39.0",
+    "psutil>=5.9",
+]
+optional-dependencies = {linux = ["systemd-python>=234"]}
+
+[project.urls]
+Homepage = "https://github.com/atulya/atulya-launch"
+Issues = "https://github.com/atulya/atulya-launch/issues"
+
+[project.scripts]
+atulya-launch = "atulya_launch.cli:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "atulya_launch.__version__"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

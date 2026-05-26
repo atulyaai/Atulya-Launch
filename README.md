@@ -1,14 +1,14 @@
-# Atulya Host
+# Atulya-Launch
 
 > **A simple self-hosting panel for websites, APIs and AI applications.** ☁️🚀
 
-![Atulya - One-click business automation](assets/atulya-hero.png)
+![Atulya-Launch banner](assets/atulya-hero.png)
 
 ![Status](https://img.shields.io/badge/status-architecture%20only-f59e0b)
 ![Target](https://img.shields.io/badge/target-Linux%20servers-2563eb)
 ![Security](https://img.shields.io/badge/security-first-critical-ef4444)
 
-Atulya Host is a planned standalone hosting panel: deploy web apps, Python APIs and AI dashboards on infrastructure you control.
+Atulya-Launch is a planned standalone hosting panel: deploy web apps, Python APIs and AI dashboards on infrastructure you control.
 
 > 🚧 Architecture stage only. A server control panel should not be exposed publicly until security review, hardening, update handling and backup testing are complete.
 
@@ -63,10 +63,6 @@ flowchart TD
 | 3 | Deployment of static and Python demo applications |
 | 4 | TLS, backups, databases and hardened authentication |
 | 5 | Security review, guided server installer and stable application hosting |
-
-## 🔗 Independent Atulya Projects
-
-This is a standalone product. Discover other independent Atulya repositories: [Automation Hub](https://github.com/atulyaai/Atulya-Automation-Hub) · [ERP](https://github.com/atulyaai/Atulya-Accounting-ERP) · [GST](https://github.com/atulyaai/Atulya-GST-Suite) · [SAP](https://github.com/atulyaai/Atulya-SAP-Automations) · [Office](https://github.com/atulyaai/Atulya-Office) · [HR](https://github.com/atulyaai/Atulya-HR-Suite) · [DataClean](https://github.com/atulyaai/Atulya-Data-Scruber) · [Invoice](https://github.com/atulyaai/Atulya-Invoice) · [Convert](https://github.com/atulyaai/Atulya-All-File-Converter)
 
 ## 📜 License
 

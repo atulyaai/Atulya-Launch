@@ -8,7 +8,7 @@
 ![Target](https://img.shields.io/badge/target-Linux%20servers-2563eb)
 ![Security](https://img.shields.io/badge/security-first-critical-ef4444)
 
-Atulya Host is the planned infrastructure module of the Atulya family: deploy business tools, web apps, Python APIs and AI dashboards on infrastructure you control.
+Atulya Host is a planned standalone hosting panel: deploy web apps, Python APIs and AI dashboards on infrastructure you control.
 
 > 🚧 Architecture stage only. A server control panel should not be exposed publicly until security review, hardening, update handling and backup testing are complete.
 
@@ -22,7 +22,7 @@ Rather than cloning every hosting-panel feature, Atulya Host will focus first on
 | Deploy an API | Reverse proxy, environment variables and HTTPS |
 | Deploy static/Node app | Build and publish with controlled configuration |
 | Back up application data | Scheduled encrypted backups and restore testing |
-| Host Atulya modules | Team-accessible ERP/GST/HR workspace deployment |
+| Host internal applications | Team-accessible application deployment |
 
 ## 🏗️ Architecture
 
@@ -62,11 +62,11 @@ flowchart TD
 | 2 | Local-only dashboard for app status and logs |
 | 3 | Deployment of static and Python demo applications |
 | 4 | TLS, backups, databases and hardened authentication |
-| 5 | Security review, guided server installer and Atulya app hosting |
+| 5 | Security review, guided server installer and stable application hosting |
 
-## 🔗 Ecosystem
+## 🔗 Independent Atulya Projects
 
-[Atulya One](https://github.com/atulyaai/Atulya-Automation-Hub) · [Atulya ERP](https://github.com/atulyaai/Atulya-Accounting-ERP) · [Atulya GST](https://github.com/atulyaai/Atulya-GST-Suite) · [Atulya HR](https://github.com/atulyaai/Atulya-HR-Suite)
+This is a standalone product. Discover other independent Atulya repositories: [Automation Hub](https://github.com/atulyaai/Atulya-Automation-Hub) · [ERP](https://github.com/atulyaai/Atulya-Accounting-ERP) · [GST](https://github.com/atulyaai/Atulya-GST-Suite) · [SAP](https://github.com/atulyaai/Atulya-SAP-Automations) · [Office](https://github.com/atulyaai/Atulya-Office) · [HR](https://github.com/atulyaai/Atulya-HR-Suite) · [DataClean](https://github.com/atulyaai/Atulya-Data-Scruber) · [Invoice](https://github.com/atulyaai/Atulya-Invoice) · [Convert](https://github.com/atulyaai/Atulya-All-File-Converter)
 
 ## 📜 License
 

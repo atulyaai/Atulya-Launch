@@ -46,4 +46,5 @@ atulya-launch = "atulya_launch.cli:main"
 version = {attr = "atulya_launch.__version__"}
 
 [tool.setuptools.packages.find]
-where = ["src"]
+include = ["*"]
+

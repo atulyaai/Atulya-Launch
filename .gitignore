@@ -53,3 +53,4 @@ acme/
 # Secrets
 .env
 .env.*
+!.env.example

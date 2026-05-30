@@ -1,0 +1,102 @@
+# Atulya-Launch Fail2ban Configuration
+# Managed by Atulya-Launch installer
+
+[DEFAULT]
+# Ban for 1 hour
+bantime = 3600
+# Detection window
+findtime = 600
+# Max retries before ban
+maxretry = 5
+# Ban action
+banaction = ufw
+# Ignore localhost
+ignoreip = 127.0.0.1/8 ::1
+
+# ── SSH Protection ───────────────────────────────────────────────────────────
+[sshd]
+enabled = true
+port = ssh
+filter = sshd
+logpath = /var/log/auth.log
+maxretry = 3
+bantime = 3600
+findtime = 600
+
+[sshd-ddos]
+enabled = true
+port = ssh
+filter = sshd-ddos
+logpath = /var/log/auth.log
+maxretry = 6
+bantime = 3600
+findtime = 600
+
+# ── Nginx Protection ─────────────────────────────────────────────────────────
+[nginx-http-auth]
+enabled = true
+port = http,https
+filter = nginx-http-auth
+logpath = /var/log/nginx/error.log
+maxretry = 5
+bantime = 3600
+
+[nginx-botsearch]
+enabled = true
+port = http,https
+filter = nginx-botsearch
+logpath = /var/log/nginx/access.log
+maxretry = 5
+bantime = 3600
+
+[nginx-badbots]
+enabled = true
+port = http,https
+filter = nginx-badbots
+logpath = /var/log/nginx/access.log
+maxretry = 2
+bantime = 86400
+
+[nginx-limit-req]
+enabled = true
+port = http,https
+filter = nginx-limit-req
+logpath = /var/log/nginx/error.log
+maxretry = 10
+bantime = 3600
+
+# ── Postfix Protection ───────────────────────────────────────────────────────
+[postfix]
+enabled = true
+port = smtp,465,submission
+filter = postfix
+logpath = /var/log/mail.log
+maxretry = 3
+bantime = 3600
+
+[postfix-rbl]
+enabled = true
+port = smtp,465,submission
+filter = postfix-rbl
+logpath = /var/log/mail.log
+maxretry = 3
+bantime = 7200
+
+# ── Dovecot Protection ───────────────────────────────────────────────────────
+[dovecot]
+enabled = true
+port = imap,imaps,pop3,pop3s
+filter = dovecot
+logpath = /var/log/mail.log
+maxretry = 5
+bantime = 3600
+
+# ── Atulya-Launch Panel Protection ───────────────────────────────────────────
+[atulya-panel]
+enabled = true
+port = 8443
+filter = atulya-panel
+logpath = /var/log/atulya-launch/*.log
+maxretry = 5
+bantime = 3600
+findtime = 600

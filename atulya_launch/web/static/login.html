@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Atulya Launch - Login</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="login-page">
+  <div class="login-box">
+    <div class="login-logo">
+      <h1>Atulya Launch</h1>
+      <p>Server Management Dashboard</p>
+    </div>
+    <div id="loginError" class="login-error"></div>
+    <form id="loginForm">
+      <div class="form-group">
+        <label for="username">Username</label>
+        <input type="text" id="username" class="form-control" placeholder="Enter username" required autofocus>
+      </div>
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" class="form-control" placeholder="Enter password" required>
+      </div>
+      <div class="form-group">
+        <label class="form-check">
+          <input type="checkbox" id="remember"> Remember me
+        </label>
+      </div>
+      <button type="submit" class="btn btn-primary btn-block btn-lg" id="loginBtn">Sign In</button>
+    </form>
+  </div>
+</div>
+<script>
+const form = document.getElementById('loginForm');
+const errEl = document.getElementById('loginError');
+const btn = document.getElementById('loginBtn');
+
+if (localStorage.getItem('token')) location.href = 'index.html';
+
+form.addEventListener('submit', async e => {
+  e.preventDefault();
+  btn.disabled = true;
+  btn.textContent = 'Signing in...';
+  errEl.classList.remove('show');
+  const user = document.getElementById('username').value.trim();
+  const pass = document.getElementById('password').value;
+  const remember = document.getElementById('remember').checked;
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: user, password: pass })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Login failed');
+    if (remember) localStorage.setItem('token', data.token);
+    else sessionStorage.setItem('token', data.token);
+    localStorage.setItem('user', user);
+    location.href = 'index.html';
+  } catch (err) {
+    errEl.textContent = err.message;
+    errEl.classList.add('show');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Sign In';
+  }
+});
+</script>
+</body>
+</html>

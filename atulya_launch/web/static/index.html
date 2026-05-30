@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Atulya Launch</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="login-page" id="loginGate">
+  <div class="login-box">
+    <div class="login-logo">
+      <h1>Atulya Launch</h1>
+      <p>Server Management Dashboard</p>
+    </div>
+    <div id="loginError" class="login-error"></div>
+    <form id="loginForm">
+      <div class="form-group">
+        <label for="username">Username</label>
+        <input type="text" id="username" class="form-control" placeholder="Enter username" required autofocus>
+      </div>
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" class="form-control" placeholder="Enter password" required>
+      </div>
+      <div class="form-group">
+        <label class="form-check">
+          <input type="checkbox" id="remember"> Remember me
+        </label>
+      </div>
+      <button type="submit" class="btn btn-primary btn-block btn-lg" id="loginBtn">Sign In</button>
+    </form>
+  </div>
+</div>
+
+<div class="app hidden" id="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="logo-icon">A</div>
+      <span class="logo-text">Atulya Launch</span>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-section">
+        <div class="nav-section-title">Main</div>
+        <div class="nav-item active" data-section="dashboard"><span class="icon">&#9632;</span> Dashboard</div>
+        <div class="nav-item" data-section="websites"><span class="icon">&#127760;</span> Websites</div>
+        <div class="nav-item" data-section="dns"><span class="icon">&#9879;</span> Domains</div>
+        <div class="nav-item" data-section="email"><span class="icon">&#9993;</span> Email</div>
+        <div class="nav-item" data-section="databases"><span class="icon">&#128451;</span> Databases</div>
+        <div class="nav-item" data-section="files"><span class="icon">&#128193;</span> File Manager</div>
+        <div class="nav-item" data-section="ssl"><span class="icon">&#128274;</span> SSL Certificates</div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-section-title">Advanced</div>
+        <div class="nav-item" data-section="backups"><span class="icon">&#128190;</span> Backups</div>
+        <div class="nav-item" data-section="firewall"><span class="icon">&#128737;</span> Firewall</div>
+        <div class="nav-item" data-section="cron"><span class="icon">&#9200;</span> Cron Jobs</div>
+        <div class="nav-item" data-section="apps"><span class="icon">&#128230;</span> App Installer</div>
+        <div class="nav-item" data-section="monitor"><span class="icon">&#128200;</span> System Monitor</div>
+        <div class="nav-item" data-section="settings"><span class="icon">&#9881;</span> Settings</div>
+      </div>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="nav-item" id="sidebarLogout"><span class="icon">&#9211;</span> Logout</div>
+    </div>
+  </aside>
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+  <div class="main">
+    <header class="header">
+      <div class="header-left">
+        <button class="menu-toggle" id="menuToggle">&#9776;</button>
+        <div class="breadcrumb" id="breadcrumb">
+          <span>Home</span><span class="sep">/</span><span class="current">Dashboard</span>
+        </div>
+      </div>
+      <div class="header-right">
+        <div class="header-info">
+          <div class="info-item"><span class="dot"></span> <span id="serverStatus">Online</span></div>
+          <div class="info-item" id="serverUptime">Uptime: --</div>
+        </div>
+        <button class="notif-btn" id="notifBtn">&#128276;<span class="notif-badge hidden" id="notifBadge">0</span></button>
+        <div style="position:relative">
+          <button class="user-btn" id="userBtn">&#128100;</button>
+          <div class="user-menu" id="userMenu">
+            <div class="user-menu-item" id="menuUser"><span>&#128100;</span> <span id="menuUserName">admin</span></div>
+            <div class="user-menu-divider"></div>
+            <div class="user-menu-item danger" id="menuLogout"><span>&#9211;</span> Logout</div>
+          </div>
+        </div>
+      </div>
+    </header>
+    <div class="content" id="content">
+      <div class="spinner"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="modalTitle"></span>
+      <button class="modal-close" id="modalClose">&times;</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-footer" id="modalFooter"></div>
+  </div>
+</div>
+
+<div class="context-menu" id="contextMenu"></div>
+<div class="toast-container" id="toastContainer"></div>
+
+<script src="js/app.js"></script>
+</body>
+</html>

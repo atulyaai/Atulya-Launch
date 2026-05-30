@@ -15,7 +15,7 @@ function getToken(){return localStorage.getItem('token')||sessionStorage.getItem
 function setToken(t,rem){if(rem)localStorage.setItem('token',t);else sessionStorage.setItem('token',t);token=t;}
 function clearToken(){localStorage.removeItem('token');sessionStorage.removeItem('token');localStorage.removeItem('user');token=null;}
 
-// API
+// API helper
 async function api(path,opts={}){
   const t=getToken();
   const h={'Content-Type':'application/json',...(opts.headers||{})};
@@ -24,10 +24,13 @@ async function api(path,opts={}){
     const r=await fetch('/api'+path,{...opts,headers:h});
     if(r.status===401){clearToken();location.reload();return null;}
     const d=await r.json();
-    if(!r.ok)throw new Error(d.error||'Request failed');
+    if(!r.ok)throw new Error(d.detail||d.error||'Request failed');
     return d;
   }catch(e){throw e;}
 }
+
+// Convert object-of-objects to array
+function objToArray(obj){if(Array.isArray(obj))return obj;if(!obj)return[];return Object.values(obj);}
 
 // Toast
 function toast(msg,type='info'){
@@ -50,7 +53,7 @@ function showModal(title,bodyHtml,footerHtml=''){
 }
 function hideModal(){$('#modalOverlay').classList.remove('show');}
 
-// Confirm dialog
+// Confirm
 function confirmAction(msg,cb){
   showModal('Confirm',`<p>${msg}</p>`,
     `<button class="btn btn-ghost" id="confirmCancel">Cancel</button>
@@ -75,7 +78,7 @@ function navigate(section){
   if(loaders[section])loaders[section]();
 }
 
-// Dashboard
+// ── Dashboard ─────────────────────────────────────────────────────────
 async function loadDashboard(){
   const c=$('#content');
   c.innerHTML=`
@@ -102,30 +105,18 @@ async function loadDashboard(){
     const d=await api('/dashboard/stats');
     if(d){
       $('#dashStats').innerHTML=`
-        <div class="stat-card"><div class="stat-info"><h3>Websites</h3><div class="stat-value">${d.sites||0}</div></div><div class="stat-icon blue">&#127760;</div></div>
-        <div class="stat-card"><div class="stat-info"><h3>Databases</h3><div class="stat-value">${d.databases||0}</div></div><div class="stat-icon green">&#128451;</div></div>
-        <div class="stat-card"><div class="stat-info"><h3>Email Accounts</h3><div class="stat-value">${d.emails||0}</div></div><div class="stat-icon orange">&#9993;</div></div>
-        <div class="stat-card"><div class="stat-info"><h3>SSL Certs</h3><div class="stat-value">${d.ssl||0}</div></div><div class="stat-icon purple">&#128274;</div></div>
-        <div class="stat-card"><div class="stat-info"><h3>Disk Usage</h3><div class="stat-value">${d.diskUsed||'--'}</div><div class="stat-change">${d.diskTotal||''} total</div></div><div class="stat-icon red">&#128190;</div></div>
-        <div class="stat-card"><div class="stat-info"><h3>Uptime</h3><div class="stat-value">${d.uptime||'--'}</div></div><div class="stat-icon blue">&#9200;</div></div>`;
-      $('#serverUptime').textContent='Uptime: '+d.uptime;
+        <div class="stat-card"><div class="stat-info"><h3>Websites</h3><div class="stat-value">${d.sites_count||0}</div></div><div class="stat-icon blue">&#127760;</div></div>
+        <div class="stat-card"><div class="stat-info"><h3>Databases</h3><div class="stat-value">${d.databases_count||0}</div></div><div class="stat-icon green">&#128451;</div></div>
+        <div class="stat-card"><div class="stat-info"><h3>SSL Certs</h3><div class="stat-value">${d.ssl_count||0}</div></div><div class="stat-icon purple">&#128274;</div></div>
+        <div class="stat-card"><div class="stat-info"><h3>Backups</h3><div class="stat-value">${d.backups_count||0}</div></div><div class="stat-icon orange">&#128190;</div></div>
+        <div class="stat-card"><div class="stat-info"><h3>Disk</h3><div class="stat-value">${d.disk_percent||0}%</div></div><div class="stat-icon red">&#128190;</div></div>
+        <div class="stat-card"><div class="stat-info"><h3>Uptime</h3><div class="stat-value">${d.uptime_hours?d.uptime_hours.toFixed(0)+'h':'--'}</div></div><div class="stat-icon blue">&#9200;</div></div>`;
+      renderGauges({cpu:d.cpu_percent||0,ram:d.memory_percent||0,disk:d.disk_percent||0});
     }
   }catch(e){}
 
-  try{
-    const d=await api('/system/stats');
-    if(d)renderGauges(d);
-  }catch(e){renderGauges({cpu:0,ram:0,disk:0});}
-
   const al=$('#activityList');
-  const activities=[
-    {icon:'&#128274;',color:'var(--info)',text:'SSL renewed for example.com',time:'2 min ago'},
-    {icon:'&#128190;',color:'var(--success)',text:'Backup completed successfully',time:'15 min ago'},
-    {icon:'&#127760;',color:'var(--accent)',text:'New site "myapp" created',time:'1 hour ago'},
-    {icon:'&#9888;',color:'var(--warning)',text:'High memory usage detected',time:'3 hours ago'},
-    {icon:'&#128100;',color:'var(--text-muted)',text:'User logged in from 192.168.1.1',time:'5 hours ago'}
-  ];
-  al.innerHTML=activities.map(a=>`<div class="activity-item"><div class="activity-icon" style="background:${a.color}22;color:${a.color}">${a.icon}</div><div class="activity-content"><div class="activity-text">${a.text}</div><div class="activity-time">${a.time}</div></div></div>`).join('');
+  al.innerHTML='<div class="activity-item"><div class="activity-icon" style="background:var(--info);color:#fff">&#8505;</div><div class="activity-content"><div class="activity-text">System ready</div><div class="activity-time">Just now</div></div></div>';
 
   loadProcesses();
   monitorInterval=setInterval(loadProcesses,5000);
@@ -148,57 +139,65 @@ function renderGauges(d){
 
 async function loadProcesses(){
   try{
-    const d=await api('/system/processes');
+    const d=await api('/monitor/processes?sort_by=cpu&limit=5');
     if(d&&d.processes){
       const tb=$('#procTable tbody');
-      if(tb)tb.innerHTML=d.processes.slice(0,5).map(p=>`<tr><td>${p.pid}</td><td class="truncate" style="max-width:180px">${p.name}</td><td>${p.cpu.toFixed(1)}</td><td>${p.mem.toFixed(1)}</td></tr>`).join('');
+      if(tb)tb.innerHTML=d.processes.map(p=>`<tr><td>${p.pid}</td><td class="truncate" style="max-width:180px">${p.name}</td><td>${(p.cpu_percent||0).toFixed(1)}</td><td>${(p.memory_percent||0).toFixed(1)}</td></tr>`).join('');
     }
   }catch(e){}
 }
 
-// Websites
+// ── Websites ──────────────────────────────────────────────────────────
 async function loadWebsites(){
   const c=$('#content');
-  c.innerHTML=`<div class="section-header"><h1 class="section-title">Websites</h1><button class="btn btn-primary" id="addSiteBtn">+ Add Website</button></div><div class="card"><div class="table-wrap"><table><thead><tr><th>Domain</th><th>Root</th><th>Status</th><th>Actions</th></tr></thead><tbody id="siteList"></tbody></table></div></div>`;
+  c.innerHTML=`<div class="section-header"><h1 class="section-title">Websites</h1><button class="btn btn-primary" id="addSiteBtn">+ Add Website</button></div><div class="card"><div class="table-wrap"><table><thead><tr><th>Domain</th><th>Root</th><th>Server</th><th>Status</th><th>Actions</th></tr></thead><tbody id="siteList"></tbody></table></div></div>`;
   $('#addSiteBtn').onclick=()=>showAddSite();
   try{
-    const d=await api('/websites');
+    const d=await api('/sites');
+    const sites=objToArray(d&&d.sites);
     const tb=$('#siteList');
-    if(d&&d.length){
-      tb.innerHTML=d.map(s=>`<tr><td>${s.domain}</td><td class="font-mono text-sm">${s.root}</td><td><span class="badge badge-success">Active</span></td><td><button class="btn btn-sm btn-ghost" onclick="siteManage('${s.domain}')">Manage</button> <button class="btn btn-sm btn-danger" onclick="siteDelete('${s.domain}')">Delete</button></td></tr>`).join('');
-    }else{tb.innerHTML='<tr><td colspan="4"><div class="empty-state"><div class="icon">&#127760;</div><h3>No websites yet</h3><p>Create your first website to get started</p></div></td></tr>';}
-  }catch(e){$('#siteList').innerHTML='<tr><td colspan="4" class="text-muted text-center">Failed to load websites</td></tr>';}
+    if(sites.length){
+      tb.innerHTML=sites.map(s=>`<tr><td>${s.domain}</td><td class="font-mono text-sm">${s.web_root||'--'}</td><td>${s.server_type||'nginx'}</td><td><span class="badge ${s.enabled?'badge-success':'badge-neutral'}">${s.enabled?'Active':'Disabled'}</span></td><td><button class="btn btn-sm btn-ghost" onclick="siteToggle('${s.domain}',${!s.enabled})">${s.enabled?'Disable':'Enable'}</button> <button class="btn btn-sm btn-danger" onclick="siteDelete('${s.domain}')">Delete</button></td></tr>`).join('');
+    }else{tb.innerHTML='<tr><td colspan="5"><div class="empty-state"><div class="icon">&#127760;</div><h3>No websites yet</h3><p>Create your first website to get started</p></div></td></tr>';}
+  }catch(e){$('#siteList').innerHTML='<tr><td colspan="5" class="text-muted text-center">Failed to load websites</td></tr>';}
 }
 
 function showAddSite(){
   showModal('Add Website',
     `<div class="form-group"><label>Domain Name</label><input class="form-control" id="newDomain" placeholder="example.com"></div>
-     <div class="form-group"><label>Document Root</label><input class="form-control" id="newRoot" placeholder="/home/user/public_html"></div>
-     <div class="form-group"><label>PHP Version</label><select class="form-control" id="newPhp"><option>8.2</option><option>8.1</option><option>8.0</option><option>7.4</option></select></div>`,
+     <div class="form-group"><label>Document Root (optional)</label><input class="form-control" id="newRoot" placeholder="/var/www/example.com/public"></div>
+     <div class="form-group"><label>Enable PHP</label><select class="form-control" id="newPhp"><option value="false">No</option><option value="true">Yes</option></select></div>`,
     `<button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-primary" id="createSiteBtn">Create</button>`);
   $('#createSiteBtn').onclick=async()=>{
     const domain=$('#newDomain').value.trim();
-    const root=$('#newRoot').value.trim();
     if(!domain){toast('Enter a domain','warning');return;}
-    try{await api('/websites',{method:'POST',body:JSON.stringify({domain,root,php:$('#newPhp').value})});hideModal();toast('Website created','success');loadWebsites();}catch(e){toast(e.message,'danger');}
+    try{
+      await api('/sites',{method:'POST',body:JSON.stringify({domain,web_root:$('#newRoot').value.trim()||null,php_enabled:$('#newPhp').value==='true'})});
+      hideModal();toast('Website created','success');loadWebsites();
+    }catch(e){toast(e.message,'danger');}
   };
 }
-window.siteManage=function(d){toast('Managing '+d,'info');};
-window.siteDelete=function(d){confirmAction('Delete website '+d+'?',async()=>{try{await api('/websites/'+d,{method:'DELETE'});toast('Deleted','success');loadWebsites();}catch(e){toast(e.message,'danger');}});};
+
+window.siteToggle=function(d,en){confirmAction((en?'Enable':'Disable')+' website '+d+'?',async()=>{try{await api('/sites/'+d+'/'+(en?'enable':'disable'),{method:'PUT'});toast('Updated','success');loadWebsites();}catch(e){toast(e.message,'danger');}});};
+window.siteDelete=function(d){confirmAction('Delete website '+d+'?',async()=>{try{await api('/sites/'+d,{method:'DELETE'});toast('Deleted','success');loadWebsites();}catch(e){toast(e.message,'danger');}});};
 window.hideModal=hideModal;
 
-// DNS
+// ── DNS ───────────────────────────────────────────────────────────────
 async function loadDNS(){
   const c=$('#content');
-  c.innerHTML=`<div class="section-header"><h1 class="section-title">DNS Management</h1><button class="btn btn-primary" id="addZoneBtn">+ Add Zone</button></div><div class="card"><div class="table-wrap"><table><thead><tr><th>Zone</th><th>Records</th><th>Status</th><th>Actions</th></tr></thead><tbody id="dnsList"></tbody></table></div></div>`;
+  c.innerHTML=`<div class="section-header"><h1 class="section-title">DNS Management</h1><button class="btn btn-primary" id="addZoneBtn">+ Add Zone</button></div><div class="card"><div class="table-wrap"><table><thead><tr><th>Zone</th><th>Records</th><th>Actions</th></tr></thead><tbody id="dnsList"></tbody></table></div></div>`;
   $('#addZoneBtn').onclick=()=>showAddZone();
   try{
     const d=await api('/dns/zones');
+    const zones=objToArray(d&&d.zones);
     const tb=$('#dnsList');
-    if(d&&d.length){
-      tb.innerHTML=d.map(z=>`<tr><td>${z.name}</td><td>${z.records||0} records</td><td><span class="badge badge-success">Active</span></td><td><button class="btn btn-sm btn-ghost" onclick="dnsManage('${z.name}')">Manage</button> <button class="btn btn-sm btn-danger" onclick="dnsDelete('${z.name}')">Delete</button></td></tr>`).join('');
-    }else{tb.innerHTML='<tr><td colspan="4"><div class="empty-state"><div class="icon">&#9879;</div><h3>No DNS zones</h3><p>Add a domain zone to manage DNS records</p></div></td></tr>';}
-  }catch(e){$('#dnsList').innerHTML='<tr><td colspan="4" class="text-muted text-center">Failed to load DNS zones</td></tr>';}
+    if(zones.length){
+      tb.innerHTML=zones.map(z=>{
+        const recCount=objToArray(z.records).length;
+        return `<tr><td>${z.name}</td><td>${recCount} records</td><td><button class="btn btn-sm btn-ghost" onclick="dnsManage('${z.name}')">Manage</button> <button class="btn btn-sm btn-danger" onclick="dnsDelete('${z.name}')">Delete</button></td></tr>`;
+      }).join('');
+    }else{tb.innerHTML='<tr><td colspan="3"><div class="empty-state"><div class="icon">&#9879;</div><h3>No DNS zones</h3><p>Add a domain zone to manage DNS records</p></div></td></tr>';}
+  }catch(e){$('#dnsList').innerHTML='<tr><td colspan="3" class="text-muted text-center">Failed to load DNS zones</td></tr>';}
 }
 
 function showAddZone(){
@@ -209,51 +208,52 @@ function showAddZone(){
   $('#createZoneBtn').onclick=async()=>{
     const name=$('#newZone').value.trim();
     if(!name){toast('Enter domain','warning');return;}
-    try{await api('/dns/zones',{method:'POST',body:JSON.stringify({name,ns:$('#newNs').value.trim()})});hideModal();toast('Zone created','success');loadDNS();}catch(e){toast(e.message,'danger');}
+    try{await api('/dns/zones',{method:'POST',body:JSON.stringify({name,ns:$('#newNs').value.trim()||'ns1.'+name})});hideModal();toast('Zone created','success');loadDNS();}catch(e){toast(e.message,'danger');}
   };
 }
 window.dnsManage=function(z){toast('Managing zone '+z,'info');};
 window.dnsDelete=function(z){confirmAction('Delete zone '+z+'?',async()=>{try{await api('/dns/zones/'+z,{method:'DELETE'});toast('Deleted','success');loadDNS();}catch(e){toast(e.message,'danger');}});};
 
-// Email
+// ── Email ─────────────────────────────────────────────────────────────
 async function loadEmail(){
   const c=$('#content');
-  c.innerHTML=`<div class="section-header"><h1 class="section-title">Email Accounts</h1><button class="btn btn-primary" id="addEmailBtn">+ Add Account</button></div><div class="card"><div class="table-wrap"><table><thead><tr><th>Email</th><th>Quota</th><th>Status</th><th>Actions</th></tr></thead><tbody id="emailList"></tbody></table></div></div>`;
+  c.innerHTML=`<div class="section-header"><h1 class="section-title">Email Accounts</h1><button class="btn btn-primary" id="addEmailBtn">+ Add Account</button></div><div class="card"><div class="table-wrap"><table><thead><tr><th>Email</th><th>Status</th><th>Actions</th></tr></thead><tbody id="emailList"></tbody></table></div></div>`;
   $('#addEmailBtn').onclick=()=>showAddEmail();
   try{
     const d=await api('/email/accounts');
+    const accounts=objToArray(d&&d.accounts);
     const tb=$('#emailList');
-    if(d&&d.length){
-      tb.innerHTML=d.map(e=>`<tr><td>${e.email}</td><td>${e.quota||'1 GB'}</td><td><span class="badge badge-success">Active</span></td><td><button class="btn btn-sm btn-ghost">Manage</button> <button class="btn btn-sm btn-danger" onclick="emailDelete('${e.email}')">Delete</button></td></tr>`).join('');
-    }else{tb.innerHTML='<tr><td colspan="4"><div class="empty-state"><div class="icon">&#9993;</div><h3>No email accounts</h3><p>Create your first email account</p></div></td></tr>';}
-  }catch(e){$('#emailList').innerHTML='<tr><td colspan="4" class="text-muted text-center">Failed to load email accounts</td></tr>';}
+    if(accounts.length){
+      tb.innerHTML=accounts.map(e=>`<tr><td>${e.email||e.username}</td><td><span class="badge badge-success">Active</span></td><td><button class="btn btn-sm btn-danger" onclick="emailDelete('${e.email||e.username}')">Delete</button></td></tr>`).join('');
+    }else{tb.innerHTML='<tr><td colspan="3"><div class="empty-state"><div class="icon">&#9993;</div><h3>No email accounts</h3><p>Create your first email account</p></div></td></tr>';}
+  }catch(e){$('#emailList').innerHTML='<tr><td colspan="3" class="text-muted text-center">Failed to load email accounts</td></tr>';}
 }
 
 function showAddEmail(){
   showModal('Add Email Account',
     `<div class="form-group"><label>Email Address</label><input class="form-control" id="newEmail" placeholder="user@domain.com"></div>
-     <div class="form-group"><label>Password</label><input type="password" class="form-control" id="newEmailPass" placeholder="Strong password"></div>
-     <div class="form-group"><label>Quota (MB)</label><input type="number" class="form-control" id="newEmailQuota" value="1024"></div>`,
+     <div class="form-group"><label>Password</label><input type="password" class="form-control" id="newEmailPass" placeholder="Strong password"></div>`,
     `<button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-primary" id="createEmailBtn">Create</button>`);
   $('#createEmailBtn').onclick=async()=>{
     const email=$('#newEmail').value.trim();
     const pass=$('#newEmailPass').value;
     if(!email||!pass){toast('Fill all fields','warning');return;}
-    try{await api('/email/accounts',{method:'POST',body:JSON.stringify({email,password:pass,quota:$('#newEmailQuota').value})});hideModal();toast('Email created','success');loadEmail();}catch(e){toast(e.message,'danger');}
+    try{await api('/email/accounts',{method:'POST',body:JSON.stringify({email,password:pass})});hideModal();toast('Email created','success');loadEmail();}catch(e){toast(e.message,'danger');}
   };
 }
 window.emailDelete=function(e){confirmAction('Delete email '+e+'?',async()=>{try{await api('/email/accounts/'+e,{method:'DELETE'});toast('Deleted','success');loadEmail();}catch(e){toast(e.message,'danger');}});};
 
-// Databases
+// ── Databases ─────────────────────────────────────────────────────────
 async function loadDatabases(){
   const c=$('#content');
-  c.innerHTML=`<div class="section-header"><h1 class="section-title">Databases</h1><button class="btn btn-primary" id="addDbBtn">+ Create Database</button></div><div class="card"><div class="table-wrap"><table><thead><tr><th>Name</th><th>Tables</th><th>Size</th><th>Actions</th></tr></thead><tbody id="dbList"></tbody></table></div></div>`;
+  c.innerHTML=`<div class="section-header"><h1 class="section-title">Databases</h1><button class="btn btn-primary" id="addDbBtn">+ Create Database</button></div><div class="card"><div class="table-wrap"><table><thead><tr><th>Name</th><th>User</th><th>Type</th><th>Actions</th></tr></thead><tbody id="dbList"></tbody></table></div></div>`;
   $('#addDbBtn').onclick=()=>showAddDb();
   try{
     const d=await api('/databases');
+    const dbs=objToArray(d&&d.databases);
     const tb=$('#dbList');
-    if(d&&d.length){
-      tb.innerHTML=d.map(db=>`<tr><td>${db.name}</td><td>${db.tables||0}</td><td>${db.size||'--'}</td><td><button class="btn btn-sm btn-ghost" onclick="dbManage('${db.name}')">Manage</button> <button class="btn btn-sm btn-success" onclick="dbBackup('${db.name}')">Backup</button> <button class="btn btn-sm btn-danger" onclick="dbDelete('${db.name}')">Delete</button></td></tr>`).join('');
+    if(dbs.length){
+      tb.innerHTML=dbs.map(db=>`<tr><td>${db.name}</td><td>${db.user||'--'}</td><td>${db.type||'mysql'}</td><td><button class="btn btn-sm btn-success" onclick="dbBackup('${db.name}')">Backup</button> <button class="btn btn-sm btn-danger" onclick="dbDelete('${db.name}')">Delete</button></td></tr>`).join('');
     }else{tb.innerHTML='<tr><td colspan="4"><div class="empty-state"><div class="icon">&#128451;</div><h3>No databases</h3><p>Create your first database</p></div></td></tr>';}
   }catch(e){$('#dbList').innerHTML='<tr><td colspan="4" class="text-muted text-center">Failed to load databases</td></tr>';}
 }
@@ -261,31 +261,33 @@ async function loadDatabases(){
 function showAddDb(){
   showModal('Create Database',
     `<div class="form-group"><label>Database Name</label><input class="form-control" id="newDbName" placeholder="my_database"></div>
-     <div class="form-group"><label>Database User</label><input class="form-control" id="newDbUser" placeholder="db_user"></div>
-     <div class="form-group"><label>Password</label><input type="password" class="form-control" id="newDbPass" placeholder="Strong password"></div>`,
+     <div class="form-group"><label>Database User (optional)</label><input class="form-control" id="newDbUser" placeholder="Same as name"></div>
+     <div class="form-group"><label>Password (auto-generated if empty)</label><input type="password" class="form-control" id="newDbPass" placeholder="Optional"></div>
+     <div class="form-group"><label>Type</label><select class="form-control" id="newDbType"><option value="mysql">MySQL</option><option value="postgresql">PostgreSQL</option></select></div>`,
     `<button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-primary" id="createDbBtn">Create</button>`);
   $('#createDbBtn').onclick=async()=>{
     const name=$('#newDbName').value.trim();
     if(!name){toast('Enter database name','warning');return;}
-    try{await api('/databases',{method:'POST',body:JSON.stringify({name,user:$('#newDbUser').value.trim(),password:$('#newDbPass').value})});hideModal();toast('Database created','success');loadDatabases();}catch(e){toast(e.message,'danger');}
+    try{
+      const body={name,db_type:$('#newDbType').value};
+      const u=$('#newDbUser').value.trim();if(u)body.db_user=u;
+      const p=$('#newDbPass').value;if(p)body.db_password=p;
+      await api('/databases',{method:'POST',body:JSON.stringify(body)});
+      hideModal();toast('Database created','success');loadDatabases();
+    }catch(e){toast(e.message,'danger');}
   };
 }
-window.dbManage=function(n){toast('Managing database '+n,'info');};
-window.dbBackup=function(n){confirmAction('Backup database '+n+'?',async()=>{try{await api('/databases/'+n+'/backup',{method:'POST'});toast('Backup started','success');}catch(e){toast(e.message,'danger');}});};
+window.dbBackup=function(n){confirmAction('Backup database '+n+'?',async()=>{try{await api('/databases/'+n+'/backup',{method:'POST'});toast('Backup created','success');}catch(e){toast(e.message,'danger');}});};
 window.dbDelete=function(n){confirmAction('Delete database '+n+'?',async()=>{try{await api('/databases/'+n,{method:'DELETE'});toast('Deleted','success');loadDatabases();}catch(e){toast(e.message,'danger');}});};
 
-// File Manager
-let fmPath='/';
+// ── File Manager ──────────────────────────────────────────────────────
+let fmPath='/var/www';
 async function loadFileManager(){
   const c=$('#content');
   c.innerHTML=`
     <div class="section-header"><h1 class="section-title">File Manager</h1></div>
     <div class="fm-toolbar">
       <div class="fm-breadcrumb" id="fmBreadcrumb"></div>
-      <div class="fm-views">
-        <button class="btn btn-sm btn-ghost" id="fmGridBtn" title="Grid View">&#9638;</button>
-        <button class="btn btn-sm btn-ghost" id="fmListBtn" title="List View">&#9776;</button>
-      </div>
       <button class="btn btn-sm btn-primary" id="fmUploadBtn">Upload</button>
       <button class="btn btn-sm btn-ghost" id="fmNewFolderBtn">New Folder</button>
       <button class="btn btn-sm btn-ghost" id="fmNewFileBtn">New File</button>
@@ -293,18 +295,16 @@ async function loadFileManager(){
     <div id="fmDropZone" class="fm-drop-zone hidden">Drop files here to upload</div>
     <div class="card"><div class="table-wrap"><table id="fmTable"><thead><tr><th>Name</th><th>Size</th><th>Permissions</th><th>Modified</th><th>Actions</th></tr></thead><tbody id="fmFiles"></tbody></table></div></div>
     <input type="file" id="fmFileInput" multiple style="display:none">`;
-  fmPath='/';
   renderFmBreadcrumb();
   loadFmFiles();
   $('#fmUploadBtn').onclick=()=>$('#fmFileInput').click();
   $('#fmNewFolderBtn').onclick=()=>showFmNewFolder();
   $('#fmNewFileBtn').onclick=()=>showFmNewFile();
   $('#fmFileInput').onchange=e=>uploadFmFiles(e.target.files);
-  const dz=$('#fmDropZone');
-  const zone=c;
-  zone.ondragover=e=>{e.preventDefault();dz.classList.remove('hidden');};
-  zone.ondragleave=e=>{if(!zone.contains(e.relatedTarget))dz.classList.add('hidden');};
-  zone.ondrop=e=>{e.preventDefault();dz.classList.add('hidden');uploadFmFiles(e.dataTransfer.files);};
+  const c2=c;
+  c2.ondragover=e=>{e.preventDefault();$('#fmDropZone').classList.remove('hidden');};
+  c2.ondragleave=e=>{if(!c2.contains(e.relatedTarget))$('#fmDropZone').classList.add('hidden');};
+  c2.ondrop=e=>{e.preventDefault();$('#fmDropZone').classList.add('hidden');uploadFmFiles(e.dataTransfer.files);};
 }
 
 function renderFmBreadcrumb(){
@@ -312,7 +312,7 @@ function renderFmBreadcrumb(){
   const parts=fmPath.split('/').filter(Boolean);
   let html=`<span class="fm-path-item" onclick="fmNav('/')">/</span>`;
   let p='';
-  parts.forEach((part,i)=>{
+  parts.forEach(part=>{
     p+='/'+part;
     const pp=p;
     html+=`<span class="fm-path-sep">/</span><span class="fm-path-item" onclick="fmNav('${pp}')">${part}</span>`;
@@ -324,15 +324,18 @@ async function loadFmFiles(){
   try{
     const d=await api('/files/list?path='+encodeURIComponent(fmPath));
     const tb=$('#fmFiles');
-    if(d&&d.files&&d.files.length){
-      tb.innerHTML=d.files.map(f=>{
-        const icon=f.isDir?'&#128193;':f.name.endsWith('.js')||f.name.endsWith('.py')?'&#128196;':'&#128196;';
-        return `<tr oncontextmenu="fmCtx(event,'${f.name}',${f.isDir})">
-          <td><span style="cursor:pointer" onclick="${f.isDir?"fmNav('"+fmPath+f.name+"/')":"fmOpen('"+f.name+"')"}">${icon} ${f.name}</span></td>
-          <td>${f.isDir?'--':formatSize(f.size)}</td>
-          <td class="font-mono text-sm">${f.perms||'--'}</td>
+    const files=d&&d.files?d.files:[];
+    if(files.length){
+      tb.innerHTML=files.map(f=>{
+        const icon=f.is_dir||f.isDir?'&#128193;':'&#128196;';
+        const name=f.name;
+        const isDir=f.is_dir||f.isDir;
+        return `<tr>
+          <td><span style="cursor:pointer" onclick="${isDir?"fmNav('"+fmPath.replace(/\/$/,'')+'/'+name+"/')":"fmView('"+name+"')"}">${icon} ${name}</span></td>
+          <td>${isDir?'--':formatSize(f.size||0)}</td>
+          <td class="font-mono text-sm">${f.perms||f.mode||'--'}</td>
           <td class="text-sm">${f.modified||'--'}</td>
-          <td><button class="btn btn-sm btn-ghost" onclick="fmRename('${f.name}')">Rename</button> <button class="btn btn-sm btn-danger" onclick="fmDelete('${f.name}',${f.isDir})">Delete</button></td></tr>`;
+          <td><button class="btn btn-sm btn-ghost" onclick="fmRename('${name}')">Rename</button> <button class="btn btn-sm btn-danger" onclick="fmDelete('${name}',${isDir})">Delete</button></td></tr>`;
       }).join('');
     }else{tb.innerHTML='<tr><td colspan="5"><div class="empty-state"><div class="icon">&#128193;</div><h3>Empty folder</h3></div></td></tr>';}
   }catch(e){$('#fmFiles').innerHTML='<tr><td colspan="5" class="text-muted text-center">Failed to load files</td></tr>';}
@@ -341,16 +344,26 @@ async function loadFmFiles(){
 function formatSize(b){if(!b)return'--';const u=['B','KB','MB','GB','TB'];let i=0;while(b>=1024&&i<u.length-1){b/=1024;i++;}return b.toFixed(i?1:0)+' '+u[i];}
 
 window.fmNav=function(p){fmPath=p;renderFmBreadcrumb();loadFmFiles();};
-window.fmOpen=function(n){toast('Opening '+n,'info');};
-window.fmCtx=function(e,name,isDir){e.preventDefault();const m=$('#contextMenu');m.innerHTML=`
-  <div class="context-menu-item" onclick="fmRename('${name}')">&#9998; Rename</div>
-  <div class="context-menu-item" onclick="fmDownload('${name}')">&#11015; Download</div>
-  <div class="context-menu-item" onclick="fmPerms('${name}')">&#9881; Permissions</div>
-  <div class="context-menu-divider"></div>
-  <div class="context-menu-item danger" onclick="fmDelete('${name}',${isDir})">&#128465; Delete</div>`;
-  m.style.left=e.clientX+'px';m.style.top=e.clientY+'px';m.classList.add('show');
-  const close=()=>{m.classList.remove('show');document.removeEventListener('click',close);};
-  setTimeout(()=>document.addEventListener('click',close),0);
+window.fmView=function(n){toast('Viewing '+n,'info');};
+window.fmRename=function(n){
+  showModal('Rename',`<div class="form-group"><label>New Name</label><input class="form-control" id="renameName" value="${n}"></div>`,
+    `<button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-primary" id="renameBtn">Rename</button>`);
+  $('#renameBtn').onclick=async()=>{
+    const nn=$('#renameName').value.trim();
+    if(!nn){toast('Enter name','warning');return;}
+    try{await api('/files/rename',{method:'POST',body:JSON.stringify({path:fmPath,new_name:nn,old_name:n})});hideModal();toast('Renamed','success');loadFmFiles();}catch(e){toast(e.message,'danger');}
+  };
+};
+window.fmDelete=function(n,isDir){confirmAction('Delete '+(isDir?'folder':'file')+' '+n+'?',async()=>{try{await api('/files/delete?path='+encodeURIComponent(fmPath.replace(/\/$/,'')+'/'+n),{method:'DELETE'});toast('Deleted','success');loadFmFiles();}catch(e){toast(e.message,'danger');}});};
+window.fmDownload=function(n){window.open('/api/files/download?path='+encodeURIComponent(fmPath.replace(/\/$/,'')+'/'+n),'_blank');};
+window.fmPerms=function(n){
+  showModal('Set Permissions',`<div class="form-group"><label>Permissions (e.g. 755)</label><input class="form-control" id="permVal" placeholder="755"></div>`,
+    `<button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-primary" id="permBtn">Apply</button>`);
+  $('#permBtn').onclick=async()=>{
+    const perms=$('#permVal').value.trim();
+    if(!perms){toast('Enter permissions','warning');return;}
+    try{await api('/files/chmod',{method:'POST',body:JSON.stringify({path:fmPath,mode:perms,name:n})});hideModal();toast('Permissions updated','success');loadFmFiles();}catch(e){toast(e.message,'danger');}
+  };
 };
 
 function showFmNewFolder(){
@@ -359,7 +372,7 @@ function showFmNewFolder(){
   $('#createFolderBtn').onclick=async()=>{
     const name=$('#newFolderName').value.trim();
     if(!name){toast('Enter name','warning');return;}
-    try{await api('/files/mkdir',{method:'POST',body:JSON.stringify({path:fmPath,name})});hideModal();toast('Folder created','success');loadFmFiles();}catch(e){toast(e.message,'danger');}
+    try{await api('/files/mkdir',{method:'POST',body:JSON.stringify({path:fmPath.replace(/\/$/,'')+'/'+name})});hideModal();toast('Folder created','success');loadFmFiles();}catch(e){toast(e.message,'danger');}
   };
 }
 
@@ -369,7 +382,7 @@ function showFmNewFile(){
   $('#createFileBtn').onclick=async()=>{
     const name=$('#newFileName').value.trim();
     if(!name){toast('Enter name','warning');return;}
-    try{await api('/files/create',{method:'POST',body:JSON.stringify({path:fmPath,name})});hideModal();toast('File created','success');loadFmFiles();}catch(e){toast(e.message,'danger');}
+    try{await api('/files/write',{method:'POST',body:JSON.stringify({path:fmPath.replace(/\/$/,'')+'/'+name,content:''})});hideModal();toast('File created','success');loadFmFiles();}catch(e){toast(e.message,'danger');}
   };
 }
 
@@ -383,40 +396,23 @@ async function uploadFmFiles(files){
   loadFmFiles();
 }
 
-window.fmRename=function(n){
-  showModal('Rename',`<div class="form-group"><label>New Name</label><input class="form-control" id="renameName" value="${n}"></div>`,
-    `<button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-primary" id="renameBtn">Rename</button>`);
-  $('#renameBtn').onclick=async()=>{
-    const nn=$('#renameName').value.trim();
-    if(!nn){toast('Enter name','warning');return;}
-    try{await api('/files/rename',{method:'POST',body:JSON.stringify({path:fmPath,old:n,new:nn})});hideModal();toast('Renamed','success');loadFmFiles();}catch(e){toast(e.message,'danger');}
-  };
-};
-
-window.fmDelete=function(n,isDir){confirmAction('Delete '+(isDir?'folder':'file')+' '+n+'?',async()=>{try{await api('/files/delete',{method:'POST',body:JSON.stringify({path:fmPath,name:n})});toast('Deleted','success');loadFmFiles();}catch(e){toast(e.message,'danger');}});};
-window.fmDownload=function(n){window.open('/api/files/download?path='+encodeURIComponent(fmPath)+'&name='+encodeURIComponent(n),'_blank');};
-window.fmPerms=function(n){
-  showModal('Set Permissions',`<div class="form-group"><label>Permissions (e.g. 755)</label><input class="form-control" id="permVal" placeholder="755"></div>`,
-    `<button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-primary" id="permBtn">Apply</button>`);
-  $('#permBtn').onclick=async()=>{
-    const perms=$('#permVal').value.trim();
-    if(!perms){toast('Enter permissions','warning');return;}
-    try{await api('/files/chmod',{method:'POST',body:JSON.stringify({path:fmPath,name:n,perms})});hideModal();toast('Permissions updated','success');loadFmFiles();}catch(e){toast(e.message,'danger');}
-  };
-};
-
-// SSL
+// ── SSL ───────────────────────────────────────────────────────────────
 async function loadSSL(){
   const c=$('#content');
-  c.innerHTML=`<div class="section-header"><h1 class="section-title">SSL Certificates</h1><button class="btn btn-primary" id="issueSslBtn">+ Issue Certificate</button></div><div class="card"><div class="table-wrap"><table><thead><tr><th>Domain</th><th>Issuer</th><th>Expires</th><th>Status</th><th>Actions</th></tr></thead><tbody id="sslList"></tbody></table></div></div>`;
+  c.innerHTML=`<div class="section-header"><h1 class="section-title">SSL Certificates</h1><button class="btn btn-primary" id="issueSslBtn">+ Issue Certificate</button></div><div class="card"><div class="table-wrap"><table><thead><tr><th>Domain</th><th>Expires</th><th>Status</th><th>Actions</th></tr></thead><tbody id="sslList"></tbody></table></div></div>`;
   $('#issueSslBtn').onclick=()=>showIssueSsl();
   try{
     const d=await api('/ssl/certificates');
+    const certs=objToArray(d&&d.certificates);
     const tb=$('#sslList');
-    if(d&&d.length){
-      tb.innerHTML=d.map(s=>{const exp=new Date(s.expires);const ok=exp>new Date();return`<tr><td>${s.domain}</td><td>${s.issuer||'Let\'s Encrypt'}</td><td>${s.expires||'--'}</td><td><span class="badge ${ok?'badge-success':'badge-danger'}">${ok?'Valid':'Expired'}</span></td><td><button class="btn btn-sm btn-ghost" onclick="sslRenew('${s.domain}')">Renew</button></td></tr>`;}).join('');
-    }else{tb.innerHTML='<tr><td colspan="5"><div class="empty-state"><div class="icon">&#128274;</div><h3>No SSL certificates</h3><p>Issue a certificate for your domains</p></div></td></tr>';}
-  }catch(e){$('#sslList').innerHTML='<tr><td colspan="5" class="text-muted text-center">Failed to load certificates</td></tr>';}
+    if(certs.length){
+      tb.innerHTML=certs.map(s=>{
+        const exp=s.expires_at||s.expires;
+        const ok=exp&&new Date(exp)>new Date();
+        return `<tr><td>${s.domain}</td><td>${exp||'--'}</td><td><span class="badge ${ok?'badge-success':'badge-danger'}">${ok?'Valid':'Unknown'}</span></td><td><button class="btn btn-sm btn-ghost" onclick="sslRenew('${s.domain}')">Renew</button></td></tr>`;
+      }).join('');
+    }else{tb.innerHTML='<tr><td colspan="4"><div class="empty-state"><div class="icon">&#128274;</div><h3>No SSL certificates</h3><p>Issue a certificate for your domains</p></div></td></tr>';}
+  }catch(e){$('#sslList').innerHTML='<tr><td colspan="4" class="text-muted text-center">Failed to load certificates</td></tr>';}
 }
 
 function showIssueSsl(){
@@ -426,87 +422,76 @@ function showIssueSsl(){
     `<button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-primary" id="issueBtn">Issue</button>`);
   $('#issueBtn').onclick=async()=>{
     const domain=$('#sslDomain').value.trim();
-    if(!domain){toast('Enter domain','warning');return;}
-    try{await api('/ssl/issue',{method:'POST',body:JSON.stringify({domain,email:$('#sslEmail').value.trim()})});hideModal();toast('Certificate issued','success');loadSSL();}catch(e){toast(e.message,'danger');}
+    const email=$('#sslEmail').value.trim();
+    if(!domain||!email){toast('Fill all fields','warning');return;}
+    try{await api('/ssl/issue',{method:'POST',body:JSON.stringify({domain,email})});hideModal();toast('Certificate issued','success');loadSSL();}catch(e){toast(e.message,'danger');}
   };
 }
 window.sslRenew=function(d){confirmAction('Renew SSL for '+d+'?',async()=>{try{await api('/ssl/renew/'+d,{method:'POST'});toast('Renewal started','success');}catch(e){toast(e.message,'danger');}});};
 
-// Backups
+// ── Backups ───────────────────────────────────────────────────────────
 async function loadBackups(){
   const c=$('#content');
-  c.innerHTML=`<div class="section-header"><h1 class="section-title">Backups</h1><div class="btn-group"><button class="btn btn-primary" id="createBackupBtn">+ Create Backup</button><button class="btn btn-ghost" id="scheduleBackupBtn">Schedule</button></div></div><div class="card"><div class="table-wrap"><table><thead><tr><th>Name</th><th>Size</th><th>Created</th><th>Actions</th></tr></thead><tbody id="backupList"></tbody></table></div></div>`;
+  c.innerHTML=`<div class="section-header"><h1 class="section-title">Backups</h1><div class="btn-group"><button class="btn btn-primary" id="createBackupBtn">+ Create Backup</button></div></div><div class="card"><div class="table-wrap"><table><thead><tr><th>Name</th><th>Created</th><th>Actions</th></tr></thead><tbody id="backupList"></tbody></table></div></div>`;
   $('#createBackupBtn').onclick=()=>createBackup();
-  $('#scheduleBackupBtn').onclick=()=>showScheduleBackup();
   try{
     const d=await api('/backups');
+    const backups=objToArray(d&&d.backups);
     const tb=$('#backupList');
-    if(d&&d.length){
-      tb.innerHTML=d.map(b=>`<tr><td>${b.name}</td><td>${b.size||'--'}</td><td>${b.created||'--'}</td><td><button class="btn btn-sm btn-success" onclick="restoreBackup('${b.name}')">Restore</button> <button class="btn btn-sm btn-danger" onclick="deleteBackup('${b.name}')">Delete</button></td></tr>`).join('');
-    }else{tb.innerHTML='<tr><td colspan="4"><div class="empty-state"><div class="icon">&#128190;</div><h3>No backups</h3><p>Create your first backup</p></div></td></tr>';}
-  }catch(e){$('#backupList').innerHTML='<tr><td colspan="4" class="text-muted text-center">Failed to load backups</td></tr>';}
+    if(backups.length){
+      tb.innerHTML=backups.map(b=>`<tr><td>${b.name}</td><td>${b.created_at||'--'}</td><td><button class="btn btn-sm btn-success" onclick="restoreBackup('${b.name}')">Restore</button> <button class="btn btn-sm btn-danger" onclick="deleteBackup('${b.name}')">Delete</button></td></tr>`).join('');
+    }else{tb.innerHTML='<tr><td colspan="3"><div class="empty-state"><div class="icon">&#128190;</div><h3>No backups</h3><p>Create your first backup</p></div></td></tr>';}
+  }catch(e){$('#backupList').innerHTML='<tr><td colspan="3" class="text-muted text-center">Failed to load backups</td></tr>';}
 }
 
 async function createBackup(){
-  try{await api('/backups',{method:'POST'});toast('Backup created','success');loadBackups();}catch(e){toast(e.message,'danger');}
+  try{await api('/backups/create',{method:'POST'});toast('Backup created','success');loadBackups();}catch(e){toast(e.message,'danger');}
 }
-function showScheduleBackup(){
-  showModal('Schedule Backup',
-    `<div class="form-group"><label>Frequency</label><select class="form-control" id="backupFreq"><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select></div>
-     <div class="form-group"><label>Time</label><input type="time" class="form-control" id="backupTime" value="02:00"></div>
-     <div class="form-group"><label>Retain</label><input type="number" class="form-control" id="backupRetain" value="7"></div>`,
-    `<button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-primary" id="saveScheduleBtn">Save</button>`);
-  $('#saveScheduleBtn').onclick=async()=>{
-    try{await api('/backups/schedule',{method:'POST',body:JSON.stringify({freq:$('#backupFreq').value,time:$('#backupTime').value,retain:$('#backupRetain').value})});hideModal();toast('Schedule saved','success');}catch(e){toast(e.message,'danger');}
-  };
-}
-window.restoreBackup=function(n){confirmAction('Restore backup '+n+'? This will overwrite current data.',async()=>{try{await api('/backups/'+n+'/restore',{method:'POST'});toast('Restore started','success');}catch(e){toast(e.message,'danger');}});};
+window.restoreBackup=function(n){confirmAction('Restore backup '+n+'?',async()=>{try{await api('/backups/'+n+'/restore',{method:'POST'});toast('Restore started','success');}catch(e){toast(e.message,'danger');}});};
 window.deleteBackup=function(n){confirmAction('Delete backup '+n+'?',async()=>{try{await api('/backups/'+n,{method:'DELETE'});toast('Deleted','success');loadBackups();}catch(e){toast(e.message,'danger');}});};
 
-// Firewall
+// ── Firewall ──────────────────────────────────────────────────────────
 async function loadFirewall(){
   const c=$('#content');
-  c.innerHTML=`<div class="section-header"><h1 class="section-title">Firewall</h1><button class="btn btn-primary" id="addFwRuleBtn">+ Add Rule</button></div><div class="card"><div class="table-wrap"><table><thead><tr><th>Port</th><th>Protocol</th><th>Action</th><th>Source</th><th>Description</th><th>Actions</th></tr></thead><tbody id="fwList"></tbody></table></div></div>`;
+  c.innerHTML=`<div class="section-header"><h1 class="section-title">Firewall</h1><button class="btn btn-primary" id="addFwRuleBtn">+ Add Rule</button></div><div class="card"><div class="table-wrap"><table><thead><tr><th>Port</th><th>Protocol</th><th>Action</th><th>Source</th><th>Actions</th></tr></thead><tbody id="fwList"></tbody></table></div></div>`;
   $('#addFwRuleBtn').onclick=()=>showAddFwRule();
   try{
     const d=await api('/firewall/rules');
+    const rules=d&&d.rules?d.rules:[];
     const tb=$('#fwList');
-    if(d&&d.length){
-      tb.innerHTML=d.map(r=>`<tr><td>${r.port}</td><td>${r.protocol}</td><td><span class="badge ${r.action==='allow'?'badge-success':'badge-danger'}">${r.action}</span></td><td>${r.source||'Any'}</td><td>${r.description||'--'}</td><td><button class="btn btn-sm btn-danger" onclick="deleteFwRule(${r.id})">Delete</button></td></tr>`).join('');
-    }else{tb.innerHTML='<tr><td colspan="6"><div class="empty-state"><div class="icon">&#128737;</div><h3>No firewall rules</h3><p>Add rules to secure your server</p></div></td></tr>';}
-  }catch(e){$('#fwList').innerHTML='<tr><td colspan="6" class="text-muted text-center">Failed to load rules</td></tr>';}
+    if(rules.length){
+      tb.innerHTML=rules.map(r=>`<tr><td>${r.port||r.dport||'--'}</td><td>${r.protocol||r.proto||'tcp'}</td><td><span class="badge ${(r.action||'ACCEPT')==='ACCEPT'?'badge-success':'badge-danger'}">${r.action||r.policy||'allow'}</span></td><td>${r.source||r.saddr||'Any'}</td><td><button class="btn btn-sm btn-danger" onclick="deleteFwRule('${r.id||r.num||''}')">Delete</button></td></tr>`).join('');
+    }else{tb.innerHTML='<tr><td colspan="5"><div class="empty-state"><div class="icon">&#128737;</div><h3>No firewall rules</h3><p>Add rules to secure your server</p></div></td></tr>';}
+  }catch(e){$('#fwList').innerHTML='<tr><td colspan="5" class="text-muted text-center">Failed to load rules</td></tr>';}
 }
 
 function showAddFwRule(){
   showModal('Add Firewall Rule',
     `<div class="form-row">
       <div class="form-group"><label>Port</label><input class="form-control" id="fwPort" placeholder="80"></div>
-      <div class="form-group"><label>Protocol</label><select class="form-control" id="fwProto"><option>tcp</option><option>udp</option><option>both</option></select></div>
+      <div class="form-group"><label>Protocol</label><select class="form-control" id="fwProto"><option>tcp</option><option>udp</option></select></div>
     </div>
-    <div class="form-row">
-      <div class="form-group"><label>Action</label><select class="form-control" id="fwAction"><option value="allow">Allow</option><option value="deny">Deny</option></select></div>
-      <div class="form-group"><label>Source</label><input class="form-control" id="fwSource" placeholder="0.0.0.0/0"></div>
-    </div>
-    <div class="form-group"><label>Description</label><input class="form-control" id="fwDesc" placeholder="HTTP traffic"></div>`,
+    <div class="form-group"><label>Action</label><select class="form-control" id="fwAction"><option value="allow">Allow</option><option value="deny">Deny</option></select></div>`,
     `<button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-primary" id="saveFwRuleBtn">Add Rule</button>`);
   $('#saveFwRuleBtn').onclick=async()=>{
     const port=$('#fwPort').value.trim();
     if(!port){toast('Enter port','warning');return;}
-    try{await api('/firewall/rules',{method:'POST',body:JSON.stringify({port,policy:$('#fwProto').value,action:$('#fwAction').value,source:$('#fwSource').value.trim(),description:$('#fwDesc').value.trim()})});hideModal();toast('Rule added','success');loadFirewall();}catch(e){toast(e.message,'danger');}
+    try{await api('/firewall/rules',{method:'POST',body:JSON.stringify({port,protocol:$('#fwProto').value,action:$('#fwAction').value})});hideModal();toast('Rule added','success');loadFirewall();}catch(e){toast(e.message,'danger');}
   };
 }
 window.deleteFwRule=function(id){confirmAction('Delete this rule?',async()=>{try{await api('/firewall/rules/'+id,{method:'DELETE'});toast('Deleted','success');loadFirewall();}catch(e){toast(e.message,'danger');}});};
 
-// Cron Jobs
+// ── Cron Jobs ─────────────────────────────────────────────────────────
 async function loadCronJobs(){
   const c=$('#content');
   c.innerHTML=`<div class="section-header"><h1 class="section-title">Cron Jobs</h1><button class="btn btn-primary" id="addCronBtn">+ Add Job</button></div><div class="card"><div class="table-wrap"><table><thead><tr><th>Schedule</th><th>Command</th><th>Status</th><th>Actions</th></tr></thead><tbody id="cronList"></tbody></table></div></div>`;
   $('#addCronBtn').onclick=()=>showAddCron();
   try{
     const d=await api('/cron/jobs');
+    const jobs=d&&d.jobs?d.jobs:[];
     const tb=$('#cronList');
-    if(d&&d.length){
-      tb.innerHTML=d.map(j=>`<tr><td class="font-mono text-sm">${j.schedule}</td><td class="font-mono text-sm truncate" style="max-width:300px">${j.command}</td><td><span class="badge ${j.enabled?'badge-success':'badge-neutral'}">${j.enabled?'Enabled':'Disabled'}</span></td><td><button class="btn btn-sm btn-ghost" onclick="editCron(${j.id})">Edit</button> <button class="btn btn-sm btn-danger" onclick="deleteCron(${j.id})">Delete</button></td></tr>`).join('');
+    if(jobs.length){
+      tb.innerHTML=jobs.map(j=>`<tr><td class="font-mono text-sm">${j.schedule||j.time||'--'}</td><td class="font-mono text-sm truncate" style="max-width:300px">${j.command||'--'}</td><td><span class="badge ${j.enabled!==false?'badge-success':'badge-neutral'}">${j.enabled!==false?'Enabled':'Disabled'}</span></td><td><button class="btn btn-sm btn-danger" onclick="deleteCron('${j.id||j.num||''}')">Delete</button></td></tr>`).join('');
     }else{tb.innerHTML='<tr><td colspan="4"><div class="empty-state"><div class="icon">&#9200;</div><h3>No cron jobs</h3><p>Schedule tasks to run automatically</p></div></td></tr>';}
   }catch(e){$('#cronList').innerHTML='<tr><td colspan="4" class="text-muted text-center">Failed to load cron jobs</td></tr>';}
 }
@@ -523,23 +508,9 @@ function showAddCron(){
     try{await api('/cron/jobs',{method:'POST',body:JSON.stringify({schedule:sched,command:cmd})});hideModal();toast('Job added','success');loadCronJobs();}catch(e){toast(e.message,'danger');}
   };
 }
-window.editCron=function(id){toast('Editing cron job '+id,'info');};
 window.deleteCron=function(id){confirmAction('Delete this cron job?',async()=>{try{await api('/cron/jobs/'+id,{method:'DELETE'});toast('Deleted','success');loadCronJobs();}catch(e){toast(e.message,'danger');}});};
 
-// App Installer
-const APPS=[
-  {id:'wordpress',name:'WordPress',desc:'Most popular CMS for blogs and websites',icon:'W',color:'#21759b'},
-  {id:'nextcloud',name:'Nextcloud',desc:'Self-hosted file sync and share',icon:'N',color:'#0082c9'},
-  {id:'phpmyadmin',name:'phpMyAdmin',desc:'Web-based MySQL administration',icon:'P',color:'#0068a6'},
-  {id:'roundcube',name:'Roundcube',desc:'Webmail client with modern UI',icon:'R',color:'#2e6eb5'},
-  {id:'ghost',name:'Ghost',desc:'Professional publishing platform',icon:'G',color:'#738a94'},
-  {id:'gitlab',name:'GitLab CE',desc:'Complete DevOps platform',icon:'GL',color:'#fc6d26'},
-  {id:'nodejs',name:'Node.js',desc:'JavaScript runtime for server apps',icon:'JS',color:'#68a063'},
-  {id:'flask',name:'Python/Flask',desc:'Lightweight Python web framework',icon:'F',color:'#000'},
-  {id:'docker',name:'Docker',desc:'Container platform for apps',icon:'D',color:'#2496ed'},
-  {id:'portainer',name:'Portainer',desc:'Docker management web UI',icon:'Pt',color:'#13bef9'}
-];
-
+// ── App Installer ─────────────────────────────────────────────────────
 async function loadAppInstaller(){
   const c=$('#content');
   c.innerHTML=`<div class="section-header"><h1 class="section-title">App Installer</h1></div>
@@ -550,28 +521,32 @@ async function loadAppInstaller(){
     this.classList.add('active');
     renderApps(this.dataset.tab);
   });
+  try{
+    const d=await api('/apps/available');
+    window._availableApps=d&&d.apps?d.apps:[];
+  }catch(e){window._availableApps=[];}
   renderApps('available');
 }
 
 function renderApps(tab){
   const g=$('#appGrid');
   if(tab==='available'){
-    g.innerHTML=APPS.map(a=>`<div class="app-card"><div class="app-card-header"><div class="app-icon" style="background:${a.color};color:#fff">${a.icon}</div><div><div class="app-name">${a.name}</div><div class="app-desc">${a.desc}</div></div></div><div class="app-card-footer"><button class="btn btn-sm btn-primary" onclick="installApp('${a.id}')">Install</button></div></div>`).join('');
+    const apps=window._availableApps||[];
+    if(!apps.length){g.innerHTML='<div class="empty-state" style="grid-column:1/-1"><div class="icon">&#128230;</div><h3>Loading apps...</h3></div>';return;}
+    g.innerHTML=apps.map(a=>`<div class="app-card"><div class="app-card-header"><div class="app-icon" style="background:var(--accent);color:#fff">${(a.name||'?')[0]}</div><div><div class="app-name">${a.name}</div><div class="app-desc">${a.description||''}</div><div class="app-desc" style="font-size:11px;color:var(--text-muted)">v${a.version||'?'}</div></div></div><div class="app-card-footer">${a.installed?'<span class="badge badge-success">Installed</span>':`<button class="btn btn-sm btn-primary" onclick="installApp('${a.slug}')">Install</button>`}</div></div>`).join('');
   }else{
-    g.innerHTML='<div class="empty-state" style="grid-column:1/-1"><div class="icon">&#128230;</div><h3>No apps installed</h3><p>Install an app from the Available tab</p></div>';
+    g.innerHTML='<div class="empty-state" style="grid-column:1/-1"><div class="icon">&#128230;</div><h3>Check installed apps</h3></div>';
   }
 }
 
-window.installApp=function(id){
-  const app=APPS.find(a=>a.id===id);
-  if(!app)return;
-  confirmAction(`Install ${app.name}?`,async()=>{
-    toast(`Installing ${app.name}...`,'info');
-    try{await api('/apps/install',{method:'POST',body:JSON.stringify({app:id})});toast(app.name+' installed','success');}catch(e){toast(e.message,'danger');}
+window.installApp=function(slug){
+  confirmAction('Install this app?',async()=>{
+    toast('Installing...','info');
+    try{await api('/apps/install',{method:'POST',body:JSON.stringify({slug})});toast('App installed','success');loadAppInstaller();}catch(e){toast(e.message,'danger');}
   });
 };
 
-// System Monitor
+// ── System Monitor ────────────────────────────────────────────────────
 async function loadSystemMonitor(){
   const c=$('#content');
   c.innerHTML=`<div class="section-header"><h1 class="section-title">System Monitor</h1></div>
@@ -588,21 +563,23 @@ async function loadSystemMonitor(){
 
 async function refreshMonitor(){
   try{
-    const d=await api('/system/stats');
-    if(d)renderGaugesEl('monGauges',d);
-  }catch(e){}
-  try{
-    const d=await api('/system/processes');
-    if(d&&d.processes){
-      const tb=$('#monProcs');
-      if(tb)tb.innerHTML=d.processes.map(p=>`<tr><td>${p.pid}</td><td class="truncate" style="max-width:160px">${p.name}</td><td>${p.cpu.toFixed(1)}</td><td>${p.mem.toFixed(1)}</td><td><button class="btn btn-sm btn-danger" onclick="killProc(${p.pid})">Kill</button></td></tr>`).join('');
+    const d=await api('/monitor/status');
+    if(d){
+      renderGaugesEl('monGauges',{cpu:d.cpu?d.cpu.percent:0,ram:d.memory?d.memory.percent:0,disk:d.disk?d.disk.percent:0});
+      const si=$('#sysInfo');
+      if(si&&d.uptime){
+        si.innerHTML=`<div><strong>Uptime:</strong> ${d.uptime.uptime_hours?d.uptime.uptime_hours.toFixed(1)+' hours':'--'}</div>
+          <div><strong>CPU Cores:</strong> ${d.cpu?d.cpu.count:'--'}</div>
+          <div><strong>RAM:</strong> ${d.memory?((d.memory.used/1073741824).toFixed(1)+' GB / '+(d.memory.total/1073741824).toFixed(1)+' GB'):'--'}</div>
+          <div><strong>Disk:</strong> ${d.disk?((d.disk.used/1073741824).toFixed(1)+' GB / '+(d.disk.total/1073741824).toFixed(1)+' GB'):'--'}</div>`;
+      }
     }
   }catch(e){}
   try{
-    const d=await api('/system/info');
-    if(d){
-      const si=$('#sysInfo');
-      if(si)si.innerHTML=`<div><strong>Hostname:</strong> ${d.hostname||'--'}</div><div><strong>OS:</strong> ${d.os||'--'}</div><div><strong>Kernel:</strong> ${d.kernel||'--'}</div><div><strong>CPU:</strong> ${d.cpuModel||'--'}</div><div><strong>RAM:</strong> ${d.ramTotal||'--'}</div><div><strong>Load:</strong> ${d.loadAvg||'--'}</div>`;
+    const d=await api('/monitor/processes?sort_by=cpu&limit=10');
+    if(d&&d.processes){
+      const tb=$('#monProcs');
+      if(tb)tb.innerHTML=d.processes.map(p=>`<tr><td>${p.pid}</td><td class="truncate" style="max-width:160px">${p.name}</td><td>${(p.cpu_percent||0).toFixed(1)}</td><td>${(p.memory_percent||0).toFixed(1)}</td><td><button class="btn btn-sm btn-danger" onclick="killProc(${p.pid})">Kill</button></td></tr>`).join('');
     }
   }catch(e){}
 }
@@ -619,18 +596,18 @@ function renderGaugesEl(id,d){
 
 async function loadSysLog(){
   try{
-    const d=await api('/system/log');
+    const d=await api('/monitor/logs/system?lines=30');
     const el=$('#sysLog');
     if(el&&d&&d.lines){
-      el.innerHTML=d.lines.map(l=>`<div class="log-line-${l.level||'info'}">${l.time} ${l.message}</div>`).join('');
+      el.innerHTML=d.lines.map(l=>`<div class="log-line">${typeof l==='string'?l:JSON.stringify(l)}</div>`).join('');
       el.scrollTop=el.scrollHeight;
     }
   }catch(e){}
 }
 
-window.killProc=function(pid){confirmAction('Kill process '+pid+'?',async()=>{try{await api('/system/processes/'+pid+'/kill',{method:'POST'});toast('Process killed','success');refreshMonitor();}catch(e){toast(e.message,'danger');}});};
+window.killProc=function(pid){confirmAction('Kill process '+pid+'?',async()=>{try{await api('/monitor/processes/'+pid+'/kill',{method:'POST'});toast('Process killed','success');refreshMonitor();}catch(e){toast(e.message,'danger');}});};
 
-// Settings
+// ── Settings ──────────────────────────────────────────────────────────
 async function loadSettings(){
   const c=$('#content');
   c.innerHTML=`<div class="section-header"><h1 class="section-title">Settings</h1></div>
@@ -641,11 +618,8 @@ async function loadSettings(){
         <div class="form-group"><label>Confirm Password</label><input type="password" class="form-control" id="confirmPass"></div>
         <button class="btn btn-primary" id="changePassBtn">Update Password</button>
       </div>
-      <div class="card"><div class="card-header"><span class="card-title">System Configuration</span></div>
-        <div class="form-group"><label>Hostname</label><input class="form-control" id="setHostname" placeholder="server.example.com"></div>
-        <div class="form-group"><label>Timezone</label><select class="form-control" id="setTz"><option>UTC</option><option>Asia/Kolkata</option><option>America/New_York</option><option>Europe/London</option></select></div>
-        <div class="form-group"><label>Default PHP Version</label><select class="form-control" id="setPhp"><option>8.2</option><option>8.1</option><option>8.0</option><option>7.4</option></select></div>
-        <button class="btn btn-primary" id="saveSettingsBtn">Save Settings</button>
+      <div class="card"><div class="card-header"><span class="card-title">System Info</span></div>
+        <div id="settingsInfo" style="font-size:13px;line-height:2">Loading...</div>
       </div>
     </div>`;
   $('#changePassBtn').onclick=async()=>{
@@ -654,14 +628,16 @@ async function loadSettings(){
     const cp=$('#confirmPass').value;
     if(!cur||!np){toast('Fill all fields','warning');return;}
     if(np!==cp){toast('Passwords do not match','warning');return;}
-    try{await api('/settings/password',{method:'POST',body:JSON.stringify({current:cur,new:np})});toast('Password updated','success');$('#curPass').value='';$('#newPass').value='';$('#confirmPass').value='';}catch(e){toast(e.message,'danger');}
+    try{await api('/settings/password',{method:'POST',body:JSON.stringify({current_password:cur,new_password:np})});toast('Password updated','success');$('#curPass').value='';$('#newPass').value='';$('#confirmPass').value='';}catch(e){toast(e.message,'danger');}
   };
-  $('#saveSettingsBtn').onclick=async()=>{
-    try{await api('/settings',{method:'POST',body:JSON.stringify({hostname:$('#setHostname').value.trim(),timezone:$('#setTz').value,php:$('#setPhp').value})});toast('Settings saved','success');}catch(e){toast(e.message,'danger');}
-  };
+  try{
+    const d=await api('/system/info');
+    const el=$('#settingsInfo');
+    if(el&&d)el.innerHTML=`<div><strong>Hostname:</strong> ${d.hostname||'--'}</div><div><strong>OS:</strong> ${d.os||d.platform||'--'}</div><div><strong>Kernel:</strong> ${d.kernel||d.release||'--'}</div><div><strong>Python:</strong> ${d.python_version||'--'}</div>`;
+  }catch(e){}
 }
 
-// Init
+// ── Init ──────────────────────────────────────────────────────────────
 function init(){
   if(!getToken()){
     $('#loginGate').classList.remove('hidden');
@@ -674,8 +650,8 @@ function init(){
       try{
         const r=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:$('#username').value.trim(),password:$('#password').value})});
         const d=await r.json();
-        if(!r.ok)throw new Error(d.error||'Login failed');
-        setToken(d.token,$('#remember').checked);
+        if(!r.ok)throw new Error(d.detail||d.error||'Login failed');
+        setToken(d.access_token,$('#remember').checked);
         localStorage.setItem('user',$('#username').value.trim());
         location.reload();
       }catch(err){$('#loginError').textContent=err.message;$('#loginError').classList.add('show');}

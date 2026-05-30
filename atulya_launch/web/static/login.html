@@ -55,8 +55,8 @@ form.addEventListener('submit', async e => {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Login failed');
-    if (remember) localStorage.setItem('token', data.token);
-    else sessionStorage.setItem('token', data.token);
+    if (remember) localStorage.setItem('token', data.access_token);
+    else sessionStorage.setItem('token', data.access_token);
     localStorage.setItem('user', user);
     location.href = 'index.html';
   } catch (err) {

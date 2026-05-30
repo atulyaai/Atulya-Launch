@@ -1,7 +1,7 @@
 import os
 import sys
 import subprocess
-import random
+import secrets
 import string
 import socket
 from pathlib import Path
@@ -94,7 +94,7 @@ def set_config_value(key_path, value):
 
 def generate_password(length=24):
     alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
-    return "".join(random.choice(alphabet) for _ in range(length))
+    return "".join(secrets.choice(alphabet) for _ in range(length))
 
 
 def is_port_available(port, host="127.0.0.1"):

@@ -618,7 +618,7 @@ def backup_schedule(interval, time_str, enabled=True, keep_days=30):
         "daily": f"{time_str} * * *",
         "weekly": f"{time_str} * * 0",
         "monthly": f"{time_str} 1 * *",
-        "hourly": f"{time_str} * * * *",
+        "hourly": f"0 * * * *",
     }
     cron_time = cron_map.get(interval, f"{time_str} * * *")
 

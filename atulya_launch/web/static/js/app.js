@@ -75,7 +75,23 @@ function navigate(section){
     apitokens:'API Tokens',backups3:'S3 Backups',statuspage:'Status Page',
     ftp:'FTP Accounts',webmail:'Webmail',autoresponders:'Autoresponders',spam:'Spam Filter',
     docker:'Docker',nodeapps:'Node.js Apps',pythonapps:'Python Apps',
-    audit:'Audit Log',sessions:'Sessions',loginhistory:'Login History'};
+    audit:'Audit Log',sessions:'Sessions',loginhistory:'Login History',
+    wildcardssl:'Wildcard SSL',csr:'CSR Generator',modsecurity:'WAF (ModSecurity)',
+    fail2ban:'Fail2Ban',portscan:'Port Scan',sslautorenew:'SSL Auto Renew',
+    ssldetails:'SSL Details',letsencryptwildcard:'Let\'s Encrypt WC',
+    mailinglists:'Mailing Lists',emailrouting:'Email Routing',emailalerts:'Email Alerts',
+    emailforwarding:'Email Forwarding',phpmyadmin:'phpMyAdmin',dbusers:'DB Users',
+    remotedb:'Remote DB',dbimportexport:'DB Import/Export',dbschedulebackup:'DB Backup Schedule',
+    rediscache:'Redis Cache',nginxcache:'NGINX Cache',opencache:'LiteSpeed',
+    cloudflare:'Cloudflare',clouddns:'Cloud DNS',dnsimportexport:'DNS Import/Export',
+    servercontrol:'Server Controls',timezone:'Timezone',ipv6:'IPv6',networkstats:'Network Stats',
+    vpn:'VPN',healthdashboard:'Health Dashboard',ipaccess:'IP Access',sshaccess:'SSH Access',
+    sftpisolation:'SFTP Isolation',sshterminal:'SSH Terminal',migration:'Migration',
+    plugins:'Plugins',backupencryption:'Backup Encryption',cloudbackup:'Cloud Backup',
+    filecompress:'File Compress',fileshare:'File Share',notifications:'Notifications',
+    passwordpolicy:'Password Policy',multiuser:'Multi-User',resourcehistory:'Resource History',
+    bandwidth:'Bandwidth',cronscheduler:'Cron Templates',csrf:'CSRF Tokens',
+    hotlink:'Hotlink Protection',bandwidthlimit:'Bandwidth Limit'};
   $('#breadcrumb').innerHTML=`<span>Home</span><span class="sep">/</span><span class="current">${names[section]||section}</span>`;
   if(monitorInterval){clearInterval(monitorInterval);monitorInterval=null;}
   if(wsConn){wsConn.close();wsConn=null;}
@@ -88,7 +104,23 @@ function navigate(section){
     backups3:loadBackups3,statuspage:loadStatusPage,
     ftp:loadFTP,webmail:loadWebmail,autoresponders:loadAutoresponders,spam:loadSpam,
     docker:loadDocker,nodeapps:loadNodeApps,pythonapps:loadPythonApps,
-    audit:loadAudit,sessions:loadSessions,loginhistory:loadLoginHistory};
+    audit:loadAudit,sessions:loadSessions,loginhistory:loadLoginHistory,
+    wildcardssl:loadWildcardSSL,csr:loadCSR,modsecurity:loadModSecurity,
+    fail2ban:loadFail2Ban,portscan:loadPortScan,sslautorenew:loadSSLAutoRenew,
+    ssldetails:loadSSLDetails,letsencryptwildcard:loadLetsEncryptWC,
+    mailinglists:loadMailingLists,emailrouting:loadEmailRouting,emailalerts:loadEmailAlerts,
+    emailforwarding:loadEmailForwarding,phpmyadmin:loadPhpMyAdmin,dbusers:loadDBUsers,
+    remotedb:loadRemoteDB,dbimportexport:loadDBImportExport,dbschedulebackup:loadDBScheduleBackup,
+    rediscache:loadRedisCache,nginxcache:loadNginxCache,opencache:loadLiteSpeed,
+    cloudflare:loadCloudflare,clouddns:loadCloudDNS,dnsimportexport:loadDNSImportExport,
+    servercontrol:loadServerControl,timezone:loadTimezone,ipv6:loadIPv6,networkstats:loadNetworkStats,
+    vpn:loadVPN,healthdashboard:loadHealthDashboard,ipaccess:loadIPAccess,sshaccess:loadSSHAccess,
+    sftpisolation:loadSFTPIsolation,sshterminal:loadSSHTerminal,migration:loadMigration,
+    plugins:loadPlugins,backupencryption:loadBackupEncryption,cloudbackup:loadCloudBackup,
+    filecompress:loadFileCompress,fileshare:loadFileShare,notifications:loadNotifications,
+    passwordpolicy:loadPasswordPolicy,multiuser:loadMultiUser,resourcehistory:loadResourceHistory,
+    bandwidth:loadBandwidth,cronscheduler:loadCronTemplates,csrf:loadCSRF,
+    hotlink:loadHotlinkProtection,bandwidthlimit:loadBandwidthLimit};
   if(loaders[section])loaders[section]();
 }
 

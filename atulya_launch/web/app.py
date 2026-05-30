@@ -67,6 +67,56 @@ def create_app() -> FastAPI:
     from atulya_launch.web.api.search import router as search_router
     from atulya_launch.web.api.sessions import router as sessions_router
     from atulya_launch.web.api.loginhistory import router as loginhistory_router
+    from atulya_launch.web.api.wildcardssl import router as wildcardssl_router
+    from atulya_launch.web.api.csr import router as csr_router
+    from atulya_launch.web.api.mailinglists import router as mailinglists_router
+    from atulya_launch.web.api.remotedb import router as remotedb_router
+    from atulya_launch.web.api.phpmyadmin import router as phpmyadmin_router
+    from atulya_launch.web.api.filecompress import router as filecompress_router
+    from atulya_launch.web.api.fileshare import router as fileshare_router
+    from atulya_launch.web.api.csrf import router as csrf_router
+    from atulya_launch.web.api.passwordpolicy import router as passwordpolicy_router
+    from atulya_launch.web.api.servercontrol import router as servercontrol_router
+    from atulya_launch.web.api.timezone import router as timezone_router
+    from atulya_launch.web.api.sshaccess import router as sshaccess_router
+    from atulya_launch.web.api.ipaccess import router as ipaccess_router
+    from atulya_launch.web.api.cronscheduler import router as cronscheduler_router
+    from atulya_launch.web.api.dbusers import router as dbusers_router
+    from atulya_launch.web.api.bandwidth import router as bandwidth_router
+    from atulya_launch.web.api.resourcehistory import router as resourcehistory_router
+    from atulya_launch.web.api.dnsimportexport import router as dnsimportexport_router
+    from atulya_launch.web.api.backupencryption import router as backupencryption_router
+    from atulya_launch.web.api.cloudbackup import router as cloudbackup_router
+    from atulya_launch.web.api.notifications import router as notifications_router
+    from atulya_launch.web.api.sftpisolation import router as sftpisolation_router
+    from atulya_launch.web.api.errorlogs import router as errorlogs_router
+    from atulya_launch.web.api.dbschedulebackup import router as dbschedulebackup_router
+    from atulya_launch.web.api.ipv6 import router as ipv6_router
+    from atulya_launch.web.api.networkstats import router as networkstats_router
+    from atulya_launch.web.api.vpn import router as vpn_router
+    from atulya_launch.web.api.fail2ban import router as fail2ban_router
+    from atulya_launch.web.api.nginxproxy import router as nginxproxy_router
+    from atulya_launch.web.api.opencache import router as opencache_router
+    from atulya_launch.web.api.portscan import router as portscan_router
+    from atulya_launch.web.api.letsencryptwildcard import router as letsencryptwildcard_router
+    from atulya_launch.web.api.clouddns import router as clouddns_router
+    from atulya_launch.web.api.emailalerts import router as emailalerts_router
+    from atulya_launch.web.api.sslautorenew import router as sslautorenew_router
+    from atulya_launch.web.api.modsecurity import router as modsecurity_router
+    from atulya_launch.web.api.rediscache import router as rediscache_router
+    from atulya_launch.web.api.nginxcache import router as nginxcache_router
+    from atulya_launch.web.api.cloudflare import router as cloudflare_router
+    from atulya_launch.web.api.sshterminal import router as sshterminal_router
+    from atulya_launch.web.api.emailrouting import router as emailrouting_router
+    from atulya_launch.web.api.hotlink import router as hotlink_router
+    from atulya_launch.web.api.bandwidthlimit import router as bandwidthlimit_router
+    from atulya_launch.web.api.dbimportexport import router as dbimportexport_router
+    from atulya_launch.web.api.multiuser import router as multiuser_router
+    from atulya_launch.web.api.plugins import router as plugins_router
+    from atulya_launch.web.api.migration import router as migration_router
+    from atulya_launch.web.api.emailforwarding import router as emailforwarding_router
+    from atulya_launch.web.api.healthdashboard import router as healthdashboard_router
+    from atulya_launch.web.api.ssldetails import router as ssldetails_router
 
     app.include_router(auth_router)
     app.include_router(sites_router)
@@ -105,6 +155,56 @@ def create_app() -> FastAPI:
     app.include_router(search_router)
     app.include_router(sessions_router)
     app.include_router(loginhistory_router)
+    app.include_router(wildcardssl_router)
+    app.include_router(csr_router)
+    app.include_router(mailinglists_router)
+    app.include_router(remotedb_router)
+    app.include_router(phpmyadmin_router)
+    app.include_router(filecompress_router)
+    app.include_router(fileshare_router)
+    app.include_router(csrf_router)
+    app.include_router(passwordpolicy_router)
+    app.include_router(servercontrol_router)
+    app.include_router(timezone_router)
+    app.include_router(sshaccess_router)
+    app.include_router(ipaccess_router)
+    app.include_router(cronscheduler_router)
+    app.include_router(dbusers_router)
+    app.include_router(bandwidth_router)
+    app.include_router(resourcehistory_router)
+    app.include_router(emailalerts_router)
+    app.include_router(sslautorenew_router)
+    app.include_router(modsecurity_router)
+    app.include_router(rediscache_router)
+    app.include_router(nginxcache_router)
+    app.include_router(cloudflare_router)
+    app.include_router(sshterminal_router)
+    app.include_router(emailrouting_router)
+    app.include_router(hotlink_router)
+    app.include_router(bandwidthlimit_router)
+    app.include_router(dbimportexport_router)
+    app.include_router(multiuser_router)
+    app.include_router(plugins_router)
+    app.include_router(migration_router)
+    app.include_router(emailforwarding_router)
+    app.include_router(healthdashboard_router)
+    app.include_router(ssldetails_router)
+    app.include_router(dnsimportexport_router)
+    app.include_router(backupencryption_router)
+    app.include_router(cloudbackup_router)
+    app.include_router(notifications_router)
+    app.include_router(sftpisolation_router)
+    app.include_router(errorlogs_router)
+    app.include_router(dbschedulebackup_router)
+    app.include_router(ipv6_router)
+    app.include_router(networkstats_router)
+    app.include_router(vpn_router)
+    app.include_router(fail2ban_router)
+    app.include_router(nginxproxy_router)
+    app.include_router(opencache_router)
+    app.include_router(portscan_router)
+    app.include_router(letsencryptwildcard_router)
+    app.include_router(clouddns_router)
 
     # ── Aggregated dashboard endpoint ──────────────────────────────────
     @app.get("/api/dashboard/stats")

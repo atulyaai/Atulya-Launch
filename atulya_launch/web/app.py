@@ -44,6 +44,19 @@ def create_app() -> FastAPI:
     from atulya_launch.web.api.cron import router as cron_router
     from atulya_launch.web.api.apps import router as apps_router
     from atulya_launch.web.api.system import router as system_router
+    from atulya_launch.web.api.ssh import router as ssh_router
+    from atulya_launch.web.api.subdomains import router as subdomains_router
+    from atulya_launch.web.api.redirects import router as redirects_router
+    from atulya_launch.web.api.php import router as php_router
+    from atulya_launch.web.api.dkim import router as dkim_router
+    from atulya_launch.web.api.twofa import router as twofa_router
+    from atulya_launch.web.api.gitdeploy import router as gitdeploy_router
+    from atulya_launch.web.api.staging import router as staging_router
+    from atulya_launch.web.api.errorpages import router as errorpages_router
+    from atulya_launch.web.api.quotas import router as quotas_router
+    from atulya_launch.web.api.apitokens import router as apitokens_router
+    from atulya_launch.web.api.backups3 import router as backups3_router
+    from atulya_launch.web.api.statuspage import router as statuspage_router
 
     app.include_router(auth_router)
     app.include_router(sites_router)
@@ -58,6 +71,19 @@ def create_app() -> FastAPI:
     app.include_router(cron_router)
     app.include_router(apps_router)
     app.include_router(system_router)
+    app.include_router(ssh_router)
+    app.include_router(subdomains_router)
+    app.include_router(redirects_router)
+    app.include_router(php_router)
+    app.include_router(dkim_router)
+    app.include_router(twofa_router)
+    app.include_router(gitdeploy_router)
+    app.include_router(staging_router)
+    app.include_router(errorpages_router)
+    app.include_router(quotas_router)
+    app.include_router(apitokens_router)
+    app.include_router(backups3_router)
+    app.include_router(statuspage_router)
 
     # ── Aggregated dashboard endpoint ──────────────────────────────────
     @app.get("/api/dashboard/stats")

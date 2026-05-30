@@ -65,6 +65,9 @@
         <div class="nav-item" data-section="gitdeploy"><span class="icon">&#128187;</span> Git Deploy</div>
         <div class="nav-item" data-section="staging"><span class="icon">&#9879;</span> Staging</div>
         <div class="nav-item" data-section="php"><span class="icon">&#9733;</span> PHP Manager</div>
+        <div class="nav-item" data-section="docker"><span class="icon">&#128230;</span> Docker</div>
+        <div class="nav-item" data-section="nodeapps"><span class="icon">&#128187;</span> Node.js Apps</div>
+        <div class="nav-item" data-section="pythonapps"><span class="icon">&#128013;</span> Python Apps</div>
       </div>
       <div class="nav-section">
         <div class="nav-section-title">Domain & DNS</div>
@@ -74,10 +77,20 @@
         <div class="nav-item" data-section="errorpages"><span class="icon">&#10060;</span> Error Pages</div>
       </div>
       <div class="nav-section">
+        <div class="nav-section-title">Email</div>
+        <div class="nav-item" data-section="webmail"><span class="icon">&#9993;</span> Webmail</div>
+        <div class="nav-item" data-section="autoresponders"><span class="icon">&#128227;</span> Autoresponders</div>
+        <div class="nav-item" data-section="spam"><span class="icon">&#128683;</span> Spam Filter</div>
+      </div>
+      <div class="nav-section">
         <div class="nav-section-title">Security</div>
         <div class="nav-item" data-section="twofa"><span class="icon">&#128274;</span> 2FA</div>
         <div class="nav-item" data-section="apitokens"><span class="icon">&#128273;</span> API Tokens</div>
         <div class="nav-item" data-section="quotas"><span class="icon">&#128200;</span> Disk Quotas</div>
+        <div class="nav-item" data-section="ftp"><span class="icon">&#128193;</span> FTP Accounts</div>
+        <div class="nav-item" data-section="audit"><span class="icon">&#128209;</span> Audit Log</div>
+        <div class="nav-item" data-section="sessions"><span class="icon">&#128274;</span> Sessions</div>
+        <div class="nav-item" data-section="loginhistory"><span class="icon">&#128209;</span> Login History</div>
       </div>
       <div class="nav-section">
         <div class="nav-section-title">External</div>
@@ -104,6 +117,7 @@
           <div class="info-item"><span class="dot"></span> <span id="serverStatus">Online</span></div>
           <div class="info-item" id="serverUptime">Uptime: --</div>
         </div>
+        <button class="notif-btn" id="themeToggle" title="Toggle theme">&#9789;</button>
         <button class="notif-btn" id="notifBtn">&#128276;<span class="notif-badge hidden" id="notifBadge">0</span></button>
         <div style="position:relative">
           <button class="user-btn" id="userBtn">&#128100;</button>

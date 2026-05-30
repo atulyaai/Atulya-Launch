@@ -29,6 +29,39 @@
   --font-mono: 'SF Mono', 'Cascadia Code', Consolas, monospace;
 }
 
+[data-theme="light"] {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f6f8fa;
+  --bg-tertiary: #e9ecef;
+  --bg-hover: #e5e7eb;
+  --border: #e5e7eb;
+  --text-primary: #1f2937;
+  --text-secondary: #6b7280;
+  --text-muted: #9ca3af;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --success: #059669;
+  --success-bg: #d1fae5;
+  --danger: #dc2626;
+  --danger-bg: #fee2e2;
+  --warning: #d97706;
+  --warning-bg: #fef3c7;
+  --info: #2563eb;
+  --info-bg: #dbeafe;
+  --shadow: 0 1px 3px rgba(0,0,0,0.1);
+  --shadow-lg: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+[data-theme="light"] .login-page {
+  background: #f9fafb;
+  background-image: radial-gradient(circle at 20% 50%, rgba(37,99,235,0.06) 0%, transparent 50%),
+                    radial-gradient(circle at 80% 50%, rgba(5,150,105,0.04) 0%, transparent 50%);
+}
+
+[data-theme="light"] .loading-overlay {
+  background: rgba(255,255,255,0.7);
+}
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 html, body {

@@ -19,7 +19,6 @@ def create_app() -> FastAPI:
         description="Lightweight cPanel alternative — < 50MB RAM idle",
         version="0.1.0",
         docs_url="/api/docs",
-        redoc_url="/api/redoc",
         redoc_url=None,
     )
 
@@ -57,6 +56,17 @@ def create_app() -> FastAPI:
     from atulya_launch.web.api.apitokens import router as apitokens_router
     from atulya_launch.web.api.backups3 import router as backups3_router
     from atulya_launch.web.api.statuspage import router as statuspage_router
+    from atulya_launch.web.api.ftp import router as ftp_router
+    from atulya_launch.web.api.webmail import router as webmail_router
+    from atulya_launch.web.api.autoresponders import router as autoresponders_router
+    from atulya_launch.web.api.spam import router as spam_router
+    from atulya_launch.web.api.docker import router as docker_router
+    from atulya_launch.web.api.nodeapps import router as nodeapps_router
+    from atulya_launch.web.api.pythonapps import router as pythonapps_router
+    from atulya_launch.web.api.audit import router as audit_router
+    from atulya_launch.web.api.search import router as search_router
+    from atulya_launch.web.api.sessions import router as sessions_router
+    from atulya_launch.web.api.loginhistory import router as loginhistory_router
 
     app.include_router(auth_router)
     app.include_router(sites_router)
@@ -84,6 +94,17 @@ def create_app() -> FastAPI:
     app.include_router(apitokens_router)
     app.include_router(backups3_router)
     app.include_router(statuspage_router)
+    app.include_router(ftp_router)
+    app.include_router(webmail_router)
+    app.include_router(autoresponders_router)
+    app.include_router(spam_router)
+    app.include_router(docker_router)
+    app.include_router(nodeapps_router)
+    app.include_router(pythonapps_router)
+    app.include_router(audit_router)
+    app.include_router(search_router)
+    app.include_router(sessions_router)
+    app.include_router(loginhistory_router)
 
     # ── Aggregated dashboard endpoint ──────────────────────────────────
     @app.get("/api/dashboard/stats")

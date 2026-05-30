@@ -74,7 +74,7 @@ def list_directory(path: str = Query("/", description="Directory path"), user: d
     if not target.is_dir():
         raise HTTPException(status_code=400, detail="Not a directory")
     entries = [_file_info(p) for p in sorted(target.iterdir())]
-    return {"path": str(target), "entries": entries}
+    return {"path": str(target), "files": entries}
 
 
 @router.get("/read")

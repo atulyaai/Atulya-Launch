@@ -4,6 +4,8 @@ Atulya Launch is moving from a wired control-panel prototype toward a production
 cPanel/Plesk/HestiaCP/aaPanel replacement. The fastest work is intentionally
 front-loaded; heavier daemon integrations and enterprise packaging come later.
 
+Detailed phase scaffolds live in [docs/production-plan](docs/production-plan/README.md).
+
 ## Current Truth
 
 - The FastAPI panel, auth, sessions, audit log, templates, CLI, installer, and

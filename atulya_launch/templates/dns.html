@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% set active = "dns" %}
+{% block title %}DNS - Atulya Launch{% endblock %}
+{% block content %}
+<div class="header">
+    <h2>DNS Management</h2>
+    <button class="btn btn-primary" onclick="document.getElementById('zoneModal').classList.add('active')">+ Add Zone</button>
+</div>
+
+{% if zones %}
+{% for zone in zones %}
+<div class="section">
+    <div class="section-header">
+        <h3>{{ zone.domain }}</h3>
+        <div>
+            <button class="btn btn-ghost" style="font-size:12px" onclick="document.getElementById('recordModal{{ zone.id }}').classList.add('active')">+ Record</button>
+            <form method="POST" action="/dns/zone/delete" style="display:inline" onsubmit="return confirm('Delete zone {{ zone.domain }}?')">
+                <input type="hidden" name="zone_id" value="{{ zone.id }}">
+                <button class="btn btn-danger" style="padding:4px 10px;font-size:12px">Delete</button>
+            </form>
+        </div>
+    </div>
+    <table>
+        <thead><tr><th>Name</th><th>Type</th><th>Value</th><th>TTL</th><th>Actions</th></tr></thead>
+        <tbody>
+        {% for rec in records[zone.id] %}
+        <tr>
+            <td>{{ rec.name }}</td>
+            <td><span class="badge badge-info">{{ rec.type }}</span></td>
+            <td>{{ rec.value }}</td>
+            <td>{{ rec.ttl }}</td>
+            <td>
+                <form method="POST" action="/dns/record/delete" style="display:inline">
+                    <input type="hidden" name="record_id" value="{{ rec.id }}">
+                    <button class="btn btn-danger" style="padding:2px 8px;font-size:11px">Delete</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+        {% if not records[zone.id] %}
+        <tr><td colspan="5" style="text-align:center;color:var(--text-dim)">No records</td></tr>
+        {% endif %}
+        </tbody>
+    </table>
+
+    <div class="modal-overlay" id="recordModal{{ zone.id }}">
+        <div class="modal">
+            <h3>Add Record to {{ zone.domain }}</h3>
+            <form method="POST" action="/dns/record/create">
+                <input type="hidden" name="zone_id" value="{{ zone.id }}">
+                <div class="form-group">
+                    <label>Name</label>
+                    <input type="text" name="name" placeholder="www" required>
+                </div>
+                <div class="form-group">
+                    <label>Type</label>
+                    <select name="record_type">
+                        <option value="A">A</option>
+                        <option value="AAAA">AAAA</option>
+                        <option value="CNAME">CNAME</option>
+                        <option value="MX">MX</option>
+                        <option value="TXT">TXT</option>
+                        <option value="NS">NS</option>
+                        <option value="SRV">SRV</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Value</label>
+                    <input type="text" name="value" placeholder="1.2.3.4" required>
+                </div>
+                <div class="form-group">
+                    <label>TTL</label>
+                    <input type="number" name="ttl" value="3600">
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-ghost" onclick="this.closest('.modal-overlay').classList.remove('active')">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Add</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endfor %}
+{% else %}
+<div class="empty-state">No DNS zones configured yet.</div>
+{% endif %}
+
+<div class="modal-overlay" id="zoneModal">
+    <div class="modal">
+        <h3>Add DNS Zone</h3>
+        <form method="POST" action="/dns/zone/create">
+            <div class="form-group">
+                <label>Domain</label>
+                <input type="text" name="domain" placeholder="example.com" required>
+            </div>
+            <div class="form-group">
+                <label>SOA Primary NS</label>
+                <input type="text" name="soa_primary" value="ns1">
+            </div>
+            <div class="form-group">
+                <label>SOA Email</label>
+                <input type="text" name="soa_email" value="admin">
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" onclick="this.closest('.modal-overlay').classList.remove('active')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Create</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

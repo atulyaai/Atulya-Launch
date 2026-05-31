@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% set active = "dashboard" %}
+{% block title %}Dashboard - Atulya Launch{% endblock %}
+{% block content %}
+<div class="header">
+    <h2>Dashboard</h2>
+    <div class="user-info">Logged in as <strong>{{ user.username }}</strong> ({{ user.role }})</div>
+</div>
+
+<div class="grid">
+    <div class="card">
+        <h3>Websites</h3>
+        <div class="value">{{ sites|length }}</div>
+    </div>
+    <div class="card">
+        <h3>Databases</h3>
+        <div class="value">{{ db_count }}</div>
+    </div>
+    <div class="card">
+        <h3>Email Accounts</h3>
+        <div class="value">{{ email_count }}</div>
+    </div>
+    <div class="card">
+        <h3>SSL Certificates</h3>
+        <div class="value">{{ ssl_count }}</div>
+    </div>
+    <div class="card">
+        <h3>DNS Zones</h3>
+        <div class="value">{{ dns_count }}</div>
+    </div>
+    <div class="card">
+        <h3>Backups</h3>
+        <div class="value">{{ backups|length }}</div>
+    </div>
+    <div class="card">
+        <h3>CPU Cores</h3>
+        <div class="value">{{ status.cpu_count }}</div>
+    </div>
+    <div class="card">
+        <h3>Disk Usage</h3>
+        <div class="value {% if status.disk.percent > 80 %}danger{% elif status.disk.percent > 60 %}warning{% else %}success{% endif %}">{{ status.disk.percent }}%</div>
+    </div>
+</div>
+
+{% if security.score < 80 %}
+<div class="alert alert-danger">
+    Security score: {{ security.score }}/100. <a href="/firewall" style="color: inherit;">Review security settings</a>.
+</div>
+{% endif %}
+
+<div class="section">
+    <div class="section-header">
+        <h3>Services</h3>
+    </div>
+    <div class="card">
+        {% for name, state in status.services.items() %}
+        <span class="pill">{{ name }}: {{ state }}</span>
+        {% endfor %}
+    </div>
+</div>
+
+<div class="section">
+    <div class="section-header">
+        <h3>Websites</h3>
+        <a href="/sites" class="btn btn-ghost">Manage</a>
+    </div>
+    {% if sites %}
+    <table>
+        <thead><tr><th>Domain</th><th>Web Root</th><th>Proxy</th><th>Status</th></tr></thead>
+        <tbody>
+        {% for domain, site in sites.items() %}
+        <tr>
+            <td><strong>{{ domain }}</strong></td>
+            <td>{{ site.web_root }}</td>
+            <td>{{ site.proxy_pass or '-' }}</td>
+            <td><span class="badge badge-success">Active</span></td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">No websites yet. <a href="/sites">Create one</a>.</div>
+    {% endif %}
+</div>
+
+<div class="section">
+    <div class="section-header">
+        <h3>Recent Audit Log</h3>
+    </div>
+    {% if audit %}
+    <table>
+        <thead><tr><th>Time</th><th>Action</th><th>Status</th></tr></thead>
+        <tbody>
+        {% for event in audit[-10:]|reverse %}
+        <tr>
+            <td>{{ event.time[:19] }}</td>
+            <td>{{ event.action }}</td>
+            <td><span class="badge {% if event.status == 'ok' %}badge-success{% elif event.status == 'error' %}badge-danger{% else %}badge-warning{% endif %}">{{ event.status }}</span></td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">No audit events yet.</div>
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,12 +1,16 @@
 import sys
+import json
 from pathlib import Path
 
 import click
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
+from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich import box
 
-from . import __version__, core, utils
+from . import __version__, ATULYA_TOOLS, ATULYA_ORG
+from . import core
 
 console = Console()
 
@@ -14,600 +18,591 @@ console = Console()
 @click.group()
 @click.version_option(version=__version__, prog_name="atulya-launch")
 @click.pass_context
-def cli(context):
-    context.ensure_object(dict)
+def cli(ctx):
+    ctx.ensure_object(dict)
 
 
 @cli.command()
-@click.pass_context
-def init(context):
-    platform_name = utils.get_platform()
-    config_dir = utils.ensure_config_dir()
-    config_path = utils.CONFIG_FILE
-
-    default_config = {
-        "panel": {
-            "name": "Atulya Launch",
-            "version": __version__,
-            "platform": platform_name,
-            "data_dir": str(config_dir),
-        },
-        "server": {
-            "web_server": core.detect_web_server() or "nginx",
-            "php_enabled": False,
-        },
-        "backup": {
-            "keep_days": 30,
-        },
-        "monitoring": {
-            "enabled": True,
-            "interval_seconds": 60,
-        },
-    }
-
-    if not config_path.exists():
-        utils.save_config(default_config)
-        console.print(f"[green]Initialized Atulya Launch v{__version__} on {platform_name}[/green]")
-        console.print(f"[blue]Config directory: {config_dir}[/blue]")
-    else:
-        console.print("[yellow]Configuration already exists. Run 'config show' to view.[/yellow]")
-
-    if utils.is_linux():
-        console.print("[green]Linux platform detected - all features available[/green]")
-    elif utils.is_macos():
-        console.print("[yellow]macOS platform - some features limited (site/ssl/db/user)[/yellow]")
-    elif utils.is_windows():
-        console.print("[yellow]Windows platform - management client mode[/yellow]")
-        console.print("[yellow]Server features (site/ssl/db/user) require SSH to a Linux host[/yellow]")
+@click.option("--admin", default="admin", help="Admin username to record in local config")
+@click.option("--password", default=None, help="Admin password; generated if omitted")
+@click.option("--rotate-token", is_flag=True, help="Generate a new local API token")
+def init(admin, password, rotate_token):
+    result = core.panel_init(admin_user=admin, admin_password=password, rotate_token=rotate_token)
+    console.print("[green]Atulya Launch initialized[/green]")
+    console.print(f"Config: {result['config_dir']}")
+    console.print(f"Admin:  {result['admin_user']}")
+    console.print(f"Token:  {result['api_token']}")
+    if result.get("generated_password"):
+        console.print(f"Generated password: {result['generated_password']}")
 
 
 @cli.group()
 def site():
-    pass
+    """Manage local site records and generated web roots."""
 
 
-@site.command()
+@site.command("create")
 @click.argument("domain")
-@click.option("--web-root", "-w", default=None, help="Document root path")
-@click.option("--server", "-s", type=click.Choice(["nginx", "apache"]), default=None, help="Web server type")
-@click.option("--php", is_flag=True, help="Enable PHP support")
-@click.option("--proxy-pass", default=None, help="Proxy pass URL (e.g. http://localhost:3000)")
-def create(domain, web_root, server, php, proxy_pass):
-    if not utils.is_linux():
-        console.print("[red]Site management is only supported on Linux[/red]")
+@click.option("--web-root", default=None, help="Web root inside the Atulya config directory")
+@click.option("--proxy-pass", default=None, help="Proxy target such as http://127.0.0.1:3000")
+@click.option("--php", is_flag=True, help="Include a PHP-FPM block in the generated Nginx preview")
+def site_create(domain, web_root, proxy_pass, php):
+    try:
+        site_data = core.site_create(domain, web_root=web_root, proxy_pass=proxy_pass, php=php)
+    except ValueError as error:
+        console.print(f"[red]{error}[/red]")
         sys.exit(1)
-    extra_config = {}
-    if proxy_pass:
-        extra_config["proxy_pass"] = proxy_pass
-    result = core.site_create(domain, web_root, server, php, extra_config)
-    console.print(f"[green]Site created: {domain}[/green]")
-    console.print(f"  Web root: {result.get('web_root')}")
-    console.print(f"  Server: {result.get('server_type')}")
+    console.print(f"[green]Site created:[/green] {site_data['domain']}")
+    console.print(f"Web root: {site_data['web_root']}")
+    console.print(f"Nginx:    {site_data['nginx_config']}")
 
 
-@site.command()
-def list():
+@site.command("list")
+@click.option("--json", "as_json", is_flag=True)
+def site_list(as_json):
     sites = core.site_list()
-    if not sites:
-        console.print("[yellow]No sites configured[/yellow]")
+    if as_json:
+        console.print(json.dumps(sites, indent=2))
         return
-    table = Table(title="Sites")
+    table = Table(box=box.ROUNDED)
     table.add_column("Domain", style="cyan")
-    table.add_column("Web Root", style="white")
-    table.add_column("Server", style="blue")
-    table.add_column("Status", style="green")
-    for domain_name, site_data in sites.items():
-        status = "[green]Enabled[/green]" if site_data.get("enabled") else "[red]Disabled[/red]"
+    table.add_column("Enabled", style="green")
+    table.add_column("Web Root")
+    table.add_column("Proxy")
+    for site_data in sites.values():
         table.add_row(
-            domain_name,
+            site_data["domain"],
+            "yes" if site_data.get("enabled") else "no",
             site_data.get("web_root", "-"),
-            site_data.get("server_type", "-"),
-            status,
+            site_data.get("proxy_pass") or "-",
         )
     console.print(table)
 
 
-@site.command()
+@site.command("delete")
 @click.argument("domain")
-def delete(domain):
-    if core.site_delete(domain):
-        console.print(f"[green]Site deleted: {domain}[/green]")
+def site_delete(domain):
+    try:
+        deleted = core.site_delete(domain)
+    except ValueError as error:
+        console.print(f"[red]{error}[/red]")
+        sys.exit(1)
+    if deleted:
+        console.print(f"[green]Deleted site:[/green] {domain}")
     else:
-        console.print(f"[red]Site not found: {domain}[/red]")
+        console.print(f"[yellow]Site not found:[/yellow] {domain}")
+
+
+@site.command("nginx-plan")
+@click.argument("domain", required=False)
+@click.option("--json", "as_json", is_flag=True)
+def site_nginx_plan(domain, as_json):
+    try:
+        plan = core.nginx_apply_plan(domain)
+    except ValueError as error:
+        console.print(f"[red]{error}[/red]")
         sys.exit(1)
-
-
-@site.command()
-@click.argument("domain")
-def enable(domain):
-    if core.site_toggle(domain, enable=True):
-        console.print(f"[green]Site enabled: {domain}[/green]")
-    else:
-        console.print(f"[red]Site not found: {domain}[/red]")
-        sys.exit(1)
-
-
-@site.command()
-@click.argument("domain")
-def disable(domain):
-    if core.site_toggle(domain, enable=False):
-        console.print(f"[green]Site disabled: {domain}[/green]")
-    else:
-        console.print(f"[red]Site not found: {domain}[/red]")
-        sys.exit(1)
-
-
-@cli.group()
-def ssl():
-    pass
-
-
-@ssl.command()
-@click.argument("domain")
-@click.option("--email", "-e", required=True, help="Email for Let's Encrypt")
-@click.option("--web-root", "-w", default=None, help="Web root for verification")
-@click.option("--staging", is_flag=True, help="Use staging environment")
-def issue(domain, email, web_root, staging):
-    result = core.ssl_issue(domain, email, web_root, staging)
-    if "error" in result:
-        console.print(f"[red]{result['error']}[/red]")
-        sys.exit(1)
-    console.print(f"[green]SSL certificate issued for {domain}[/green]")
-    if result.get("cert_path"):
-        console.print(f"  cert: {result['cert_path']}")
-        console.print(f"  key:  {result['key_path']}")
-
-
-@ssl.command()
-def list():
-    certs = core.ssl_list()
-    if not certs:
-        console.print("[yellow]No SSL certificates configured[/yellow]")
+    if as_json:
+        console.print(json.dumps(plan, indent=2))
         return
-    table = Table(title="SSL Certificates")
+    table = Table(box=box.ROUNDED)
     table.add_column("Domain", style="cyan")
-    table.add_column("Issued", style="white")
-    table.add_column("Expires", style="yellow")
-    table.add_column("Staging", style="blue")
-    for domain_name, cert_data in certs.items():
-        table.add_row(
-            domain_name,
-            cert_data.get("issued_at", "-"),
-            cert_data.get("expires_at", "-"),
-            "[green]Yes[/green]" if cert_data.get("staging") else "[red]No[/red]",
-        )
+    table.add_column("Source")
+    table.add_column("Target")
+    for item in plan:
+        table.add_row(item["domain"], item["source"], item["target"])
     console.print(table)
 
 
-@ssl.command()
-def renew():
-    result = core.ssl_renew()
-    if "error" in result:
-        console.print(f"[red]{result['error']}[/red]")
-        sys.exit(1)
-    if result.get("status") == "renewed":
-        domains = result.get("domains", [])
-        console.print(f"[green]Renewed SSL for {len(domains)} domain(s)[/green]")
-        for domain_name in domains:
-            console.print(f"  - {domain_name}")
-    else:
-        console.print("[yellow]No certificates needed renewal[/yellow]")
-
-
-@cli.group()
-def db():
-    pass
-
-
-@db.command()
-@click.argument("db_name")
-@click.option("--user", "-u", default=None, help="Database user")
-@click.option("--password", "-p", default=None, help="Database password (auto-generated if omitted)")
-@click.option("--type", "-t", "db_type", type=click.Choice(["mysql", "postgresql"]), default="mysql", help="Database type")
-def create(db_name, user, password, db_type):
-    result = core.db_create(db_name, user, password, db_type)
-    if "error" in result:
-        console.print(f"[red]{result['error']}[/red]")
-        sys.exit(1)
-    console.print(f"[green]Database created: {db_name}[/green]")
-    console.print(f"  User:     {result.get('user')}")
-    console.print(f"  Password: {result.get('password')}")
-    console.print(f"  Type:     {result.get('type')}")
-
-
-@db.command()
-def list():
-    databases = core.db_list()
-    if not databases:
-        console.print("[yellow]No databases configured[/yellow]")
+@cli.command("system")
+@click.option("--json", "as_json", is_flag=True)
+def system_status(as_json):
+    data = core.system_status()
+    if as_json:
+        console.print(json.dumps(data, indent=2))
         return
-    table = Table(title="Databases")
-    table.add_column("Name", style="cyan")
-    table.add_column("User", style="white")
-    table.add_column("Type", style="blue")
-    table.add_column("Created", style="green")
-    for db_name, db_data in databases.items():
-        table.add_row(
-            db_name,
-            db_data.get("user", "-"),
-            db_data.get("type", "mysql"),
-            db_data.get("created_at", "-"),
-        )
-    console.print(table)
-
-
-@db.command()
-@click.argument("db_name")
-@click.option("--output", "-o", default=None, help="Output file path")
-def backup(db_name, output):
-    result = core.db_backup(db_name, output)
-    if "error" in result:
-        console.print(f"[red]{result['error']}[/red]")
-        sys.exit(1)
-    console.print(f"[green]Database backed up: {db_name}[/green]")
-    console.print(f"  Path: {result.get('path')}")
-    size_kb = result.get("size", 0) / 1024
-    console.print(f"  Size: {size_kb:.1f} KB")
-
-
-@db.command()
-@click.argument("db_name")
-@click.argument("backup_path")
-@click.option("--type", "-t", "db_type", type=click.Choice(["mysql", "postgresql"]), default="mysql", help="Database type")
-def restore(db_name, backup_path, db_type):
-    result = core.db_restore(db_name, backup_path, db_type)
-    if "error" in result:
-        console.print(f"[red]{result['error']}[/red]")
-        sys.exit(1)
-    console.print(f"[green]Database restored: {db_name}[/green]")
-
-
-@cli.group()
-def user():
-    pass
-
-
-@user.command()
-@click.argument("username")
-@click.option("--password", "-p", default=None, help="User password (auto-generated if omitted)")
-@click.option("--shell", "-s", default="/bin/bash", help="Login shell")
-@click.option("--no-home", is_flag=True, help="Do not create home directory")
-@click.option("--groups", "-g", default=None, help="Comma-separated supplementary groups")
-def add(username, password, shell, no_home, groups):
-    group_list = groups.split(",") if groups else None
-    result = core.user_add(username, password, shell, not no_home, group_list)
-    if "error" in result:
-        console.print(f"[red]{result['error']}[/red]")
-        sys.exit(1)
-    console.print(f"[green]User created: {username}[/green]")
-    console.print(f"  Password: {result.get('password')}")
-    console.print(f"  Shell:    {result.get('shell')}")
-    console.print(f"  Home:     {result.get('home')}")
-
-
-@user.command()
-def list():
-    users = core.user_list()
-    if not users:
-        console.print("[yellow]No users configured[/yellow]")
-        return
-    table = Table(title="Users")
-    table.add_column("Username", style="cyan")
-    table.add_column("Shell", style="white")
-    table.add_column("Home", style="blue")
-    table.add_column("Groups", style="green")
-    table.add_column("Created", style="yellow")
-    for username, user_data in users.items():
-        groups_str = ", ".join(user_data.get("groups", [])) or "-"
-        table.add_row(
-            username,
-            user_data.get("shell", "-"),
-            user_data.get("home", "-"),
-            groups_str,
-            user_data.get("created_at", "-"),
-        )
-    console.print(table)
-
-
-@user.command()
-@click.argument("username")
-@click.option("--keep-home", is_flag=True, help="Keep home directory")
-def delete(username, keep_home):
-    result = core.user_delete(username, not keep_home)
-    if "error" in result:
-        console.print(f"[red]{result['error']}[/red]")
-        sys.exit(1)
-    console.print(f"[green]User deleted: {username}[/green]")
+    panel = Panel(
+        f"Platform: {data['platform']}\n"
+        f"Python:   {data['python']}\n"
+        f"Config:   {data['config_dir']}\n"
+        f"CPU:      {data['cpu_count']} cores\n"
+        f"Disk:     {data['disk']['percent']}% used\n"
+        f"Sites:    {data['sites']}\n"
+        f"Backups:  {data['backups']}",
+        title="Atulya Launch System",
+    )
+    console.print(panel)
 
 
 @cli.group()
 def backup():
-    pass
+    """Create and list Atulya Launch backups."""
 
 
-@backup.command()
-@click.option("--name", "-n", default=None, help="Backup name")
-@click.option("--no-db", is_flag=True, help="Exclude databases")
-@click.option("--no-sites", is_flag=True, help="Exclude sites")
-@click.option("--no-config", is_flag=True, help="Exclude config")
-@click.option("--destination", "-d", default=None, help="Destination directory for archive")
-def create(name, no_db, no_sites, no_config, destination):
-    result = core.backup_create(
-        name=name,
-        include_databases=not no_db,
-        include_sites=not no_sites,
-        include_config=not no_config,
-        destination=destination,
-    )
-    console.print(f"[green]Backup created: {result.get('name')}[/green]")
-    console.print(f"  Path: {result.get('path')}")
-    if result.get("archive"):
-        console.print(f"  Archive: {result.get('archive')}")
-    manifest = result.get("manifest", {})
-    console.print(f"  Includes:")
-    console.print(f"    Config:     {'Yes' if manifest.get('includes', {}).get('config') else 'No'}")
-    console.print(f"    Sites:      {len(manifest.get('includes', {}).get('sites', []))}")
-    console.print(f"    Databases:  {len(manifest.get('includes', {}).get('databases', []))}")
+@backup.command("create")
+@click.option("--name", default=None)
+def backup_create(name):
+    result = core.backup_create(name)
+    console.print(f"[green]Backup created:[/green] {result['name']}")
+    console.print(f"Path: {result['path']}")
+    console.print(f"Size: {result['size']} bytes")
 
 
-@backup.command()
-def list():
+@backup.command("list")
+@click.option("--json", "as_json", is_flag=True)
+def backup_list(as_json):
     backups = core.backup_list()
-    if not backups:
-        console.print("[yellow]No backups found[/yellow]")
+    if as_json:
+        console.print(json.dumps(backups, indent=2))
         return
-    table = Table(title="Backups")
+    table = Table(box=box.ROUNDED)
     table.add_column("Name", style="cyan")
-    table.add_column("Created", style="white")
-    table.add_column("Contents", style="blue")
-    for name, backup_data in backups.items():
-        manifest = backup_data.get("includes", {})
-        contents = []
-        if manifest.get("config"):
-            contents.append("config")
-        if manifest.get("sites"):
-            contents.append(f"sites({len(manifest['sites'])})")
-        if manifest.get("databases"):
-            contents.append(f"db({len(manifest['databases'])})")
-        contents_str = ", ".join(contents) if contents else "unknown"
+    table.add_column("Created")
+    table.add_column("Size", justify="right")
+    table.add_column("Path")
+    for backup_data in backups.values():
         table.add_row(
-            name,
+            backup_data["name"],
             backup_data.get("created_at", "-"),
-            contents_str,
+            str(backup_data.get("size", 0)),
+            backup_data.get("path", "-"),
         )
     console.print(table)
 
 
-@backup.command()
+@backup.command("restore")
 @click.argument("name")
-@click.option("--no-db", is_flag=True, help="Skip database restore")
-@click.option("--no-sites", is_flag=True, help="Skip site restore")
-@click.option("--no-config", is_flag=True, help="Skip config restore")
-def restore(name, no_db, no_sites, no_config):
-    result = core.backup_restore(name, not no_db, not no_sites, not no_config)
-    if "error" in result:
-        console.print(f"[red]{result['error']}[/red]")
+def backup_restore(name):
+    try:
+        result = core.backup_restore(name)
+    except ValueError as error:
+        console.print(f"[red]{error}[/red]")
         sys.exit(1)
-    console.print(f"[green]Backup restored: {name}[/green]")
+    console.print(f"[green]Backup restored:[/green] {result['name']}")
+    console.print(f"Archive: {result['restored_from']}")
 
 
-@backup.command()
-@click.option("--interval", "-i", type=click.Choice(["hourly", "daily", "weekly", "monthly"]), default="daily", help="Backup interval")
-@click.option("--time", "-t", "time_str", default="0 2", help="Cron time expression (min hour or hour for daily/weekly)")
-@click.option("--keep", "-k", default=30, help="Days to keep backups")
-@click.option("--disable", is_flag=True, help="Disable scheduled backup")
-def schedule(interval, time_str, keep, disable):
-    result = core.backup_schedule(interval, time_str, enabled=not disable, keep_days=keep)
-    if "error" in result:
-        console.print(f"[red]{result['error']}[/red]")
+@cli.group()
+def files():
+    """Manage files inside a recorded site's web root."""
+
+
+@files.command("list")
+@click.argument("domain")
+@click.argument("path", required=False, default=".")
+@click.option("--json", "as_json", is_flag=True)
+def files_list(domain, path, as_json):
+    try:
+        entries = core.file_list(domain, path)
+    except ValueError as error:
+        console.print(f"[red]{error}[/red]")
         sys.exit(1)
-    if disable:
-        console.print("[yellow]Scheduled backup disabled[/yellow]")
+    if as_json:
+        console.print(json.dumps(entries, indent=2))
+        return
+    table = Table(box=box.ROUNDED)
+    table.add_column("Type", style="cyan")
+    table.add_column("Name")
+    table.add_column("Size", justify="right")
+    for entry in entries:
+        table.add_row(entry["type"], entry["path"], str(entry.get("size") or "-"))
+    console.print(table)
+
+
+@files.command("write")
+@click.argument("domain")
+@click.argument("path")
+@click.argument("content")
+def files_write(domain, path, content):
+    try:
+        result = core.file_write(domain, path, content)
+    except ValueError as error:
+        console.print(f"[red]{error}[/red]")
+        sys.exit(1)
+    console.print(f"[green]Wrote file:[/green] {result['path']}")
+
+
+@files.command("mkdir")
+@click.argument("domain")
+@click.argument("path")
+def files_mkdir(domain, path):
+    try:
+        result = core.file_mkdir(domain, path)
+    except ValueError as error:
+        console.print(f"[red]{error}[/red]")
+        sys.exit(1)
+    console.print(f"[green]Created directory:[/green] {result['path']}")
+
+
+@files.command("delete")
+@click.argument("domain")
+@click.argument("path")
+def files_delete(domain, path):
+    try:
+        result = core.file_delete(domain, path)
+    except ValueError as error:
+        console.print(f"[red]{error}[/red]")
+        sys.exit(1)
+    console.print(f"[green]Deleted:[/green] {result['deleted']}")
+
+
+@cli.command("audit")
+@click.option("--limit", default=50)
+@click.option("--json", "as_json", is_flag=True)
+def audit(limit, as_json):
+    events = core.audit_list(limit)
+    if as_json:
+        console.print(json.dumps(events, indent=2))
+        return
+    table = Table(box=box.ROUNDED)
+    table.add_column("Time")
+    table.add_column("Action", style="cyan")
+    table.add_column("Status")
+    for event in events:
+        table.add_row(event["time"], event["action"], event["status"])
+    console.print(table)
+
+
+@cli.command("security-scan")
+@click.option("--json", "as_json", is_flag=True)
+def security_scan(as_json):
+    result = core.security_scan()
+    if as_json:
+        console.print(json.dumps(result, indent=2))
+        return
+    console.print(f"Security score: [bold]{result['score']}/100[/bold]")
+    if not result["issues"]:
+        console.print("[green]No high-risk local configuration issues found.[/green]")
+    for issue in result["issues"]:
+        console.print(f"[yellow]{issue['level']}[/yellow] {issue['check']}: {issue['message']}")
+
+
+@cli.group()
+def database():
+    """Manage databases (MySQL/PostgreSQL)."""
+
+
+@database.command("create")
+@click.argument("name")
+@click.option("--type", "db_type", default="mysql", help="Database type: mysql, mariadb, postgresql")
+def database_create(name, db_type):
+    result = core.database_create(name, db_type)
+    if result.get("ok"):
+        console.print(f"[green]Database created:[/green] {name} ({db_type})")
     else:
-        console.print(f"[green]Backup scheduled: {interval}[/green]")
-        console.print(f"  Interval: {result.get('interval')}")
-        console.print(f"  Keep days: {result.get('keep_days')}")
+        console.print(f"[red]Failed:[/red] {result.get('error', 'unknown error')}")
+
+
+@database.command("drop")
+@click.argument("name")
+@click.option("--type", "db_type", default="mysql")
+def database_drop(name, db_type):
+    result = core.database_drop(name, db_type)
+    if result.get("ok"):
+        console.print(f"[green]Database dropped:[/green] {name}")
+    else:
+        console.print(f"[red]Failed:[/red] {result.get('error', 'unknown error')}")
+
+
+@database.command("backup")
+@click.argument("name")
+@click.option("--type", "db_type", default="mysql")
+def database_backup_cmd(name, db_type):
+    result = core.database_backup(name, db_type)
+    if result.get("ok"):
+        console.print(f"[green]Backup created:[/green] {result['path']} ({result['size']} bytes)")
+    else:
+        console.print(f"[red]Failed:[/red] {result.get('error', 'unknown error')}")
 
 
 @cli.group()
-def monitor():
-    pass
+def ssl():
+    """Manage SSL/TLS certificates."""
 
 
-@monitor.command()
-def status():
-    result = core.monitor_status()
-    cpu = result["cpu"]
-    memory = result["memory"]
-    disk = result["disk"]
-    uptime = result["uptime"]
-
-    def render_bar(percent, width=30):
-        filled = int(width * percent / 100)
-        bar = "█" * filled + "░" * (width - filled)
-        return bar
-
-    console.print(Panel(f"[bold cyan]System Status[/bold cyan]"))
-    console.print(f"[bold]CPU:[/bold] {cpu['percent']}% ({cpu['count']} cores)")
-    console.print(f"  {render_bar(cpu['percent'])}")
-    console.print(f"[bold]Memory:[/bold] {memory['percent']}%")
-    mem_used_gb = memory['used'] / (1024**3)
-    mem_total_gb = memory['total'] / (1024**3)
-    console.print(f"  {render_bar(memory['percent'])}  {mem_used_gb:.1f}GB / {mem_total_gb:.1f}GB")
-    console.print(f"[bold]Disk:[/bold] {disk['percent']}%")
-    disk_used_gb = disk['used'] / (1024**3)
-    disk_total_gb = disk['total'] / (1024**3)
-    console.print(f"  {render_bar(disk['percent'])}  {disk_used_gb:.1f}GB / {disk_total_gb:.1f}GB")
-    console.print(f"[bold]Uptime:[/bold] {uptime['uptime_hours']:.1f} hours")
+@ssl.command("issue")
+@click.argument("domain")
+def ssl_issue(domain):
+    result = core.ssl_issue_letsencrypt(domain)
+    if result.get("ok"):
+        console.print(f"[green]Certificate issued:[/green] {domain}")
+    else:
+        console.print(f"[red]Failed:[/red] {result.get('error', 'unknown error')}")
 
 
-@monitor.command()
-@click.option("--sort", "-s", "sort_by", type=click.Choice(["cpu", "memory"]), default="cpu", help="Sort by")
-@click.option("--limit", "-l", default=20, help="Number of processes to show")
-def processes(sort_by, limit):
-    proc_list = core.monitor_processes(sort_by, limit)
-    if not proc_list:
-        console.print("[yellow]No process information available[/yellow]")
-        return
-    table = Table(title=f"Top {limit} Processes (by {sort_by})")
-    table.add_column("PID", style="cyan")
-    table.add_column("Name", style="white")
-    table.add_column("CPU%", style="green")
-    table.add_column("MEM%", style="blue")
-    table.add_column("Status", style="yellow")
-    table.add_column("User", style="magenta")
-    for proc in proc_list:
-        table.add_row(
-            str(proc.get("pid", "-")),
-            proc.get("name", "-")[:40],
-            f"{proc.get('cpu_percent', 0):.1f}",
-            f"{proc.get('memory_percent', 0):.1f}",
-            proc.get("status", "-"),
-            proc.get("username", "-")[:15],
-        )
-    console.print(table)
-
-
-@monitor.command()
-@click.argument("log_type", type=click.Choice(["system", "auth", "nginx", "apache", "mysql"]), default="system")
-@click.option("--lines", "-n", default=50, help="Number of lines")
-def logs(log_type, lines):
-    result = core.monitor_logs(log_type, lines)
-    if "error" in result:
-        console.print(f"[red]{result['error']}[/red]")
-        sys.exit(1)
-    console.print(f"[bold]Recent {log_type} logs:[/bold]")
-    for line in result.get("lines", []):
-        console.print(line)
-
-
-@monitor.command()
-def alerts():
-    alert_list = core.monitor_alerts()
-    if not alert_list:
-        console.print("[green]No active alerts[/green]")
-        return
-    table = Table(title="Active Alerts")
-    table.add_column("Level", style="cyan")
-    table.add_column("Source", style="white")
-    table.add_column("Message", style="yellow")
-    table.add_column("Timestamp", style="blue")
-    for alert in alert_list:
-        level_style = "[red]CRITICAL[/red]" if alert.get("level") == "critical" else "[yellow]WARNING[/yellow]"
-        table.add_row(
-            level_style,
-            alert.get("source", "-"),
-            alert.get("message", "-"),
-            alert.get("timestamp", "-"),
-        )
-    console.print(table)
+@ssl.command("renew")
+@click.argument("domain")
+def ssl_renew_cmd(domain):
+    result = core.ssl_renew(domain)
+    if result.get("ok"):
+        console.print(f"[green]Certificate renewed:[/green] {domain}")
+    else:
+        console.print(f"[red]Failed:[/red] {result.get('error', 'unknown error')}")
 
 
 @cli.group()
-def ai():
-    pass
+def firewall():
+    """Manage UFW firewall and Fail2Ban."""
 
 
-@ai.command()
-@click.argument("model_name")
-@click.argument("model_path")
-@click.option("--port", "-p", default=8000, help="API port")
-@click.option("--workers", "-w", default=1, help="Number of workers")
-def deploy(model_name, model_path, port, workers):
-    if not Path(model_path).exists():
-        console.print(f"[red]Model path not found: {model_path}[/red]")
-        sys.exit(1)
-    result = core.ai_deploy(model_name, model_path, port, workers)
-    if "error" in result:
-        console.print(f"[red]{result['error']}[/red]")
-        sys.exit(1)
-    console.print(f"[green]AI model deployed: {model_name}[/green]")
-    console.print(f"  Port:   {result.get('port')}")
-    console.print(f"  Status: {result.get('status')}")
-
-
-@ai.command()
-def list():
-    models = core.ai_list()
-    if not models:
-        console.print("[yellow]No AI models deployed[/yellow]")
+@firewall.command("status")
+@click.option("--json", "as_json", is_flag=True)
+def firewall_status_cmd(as_json):
+    status = core.firewall_status()
+    rules = core.firewall_list_rules()
+    f2b = core.fail2ban_status()
+    data = {"ufw": status, "rules": rules, "fail2ban": f2b}
+    if as_json:
+        console.print(json.dumps(data, indent=2))
         return
-    table = Table(title="Deployed AI Models")
-    table.add_column("Name", style="cyan")
-    table.add_column("Model Path", style="white")
-    table.add_column("Port", style="blue")
+    console.print(f"UFW: {'[green]Active[/green]' if status.get('active') else '[yellow]Inactive[/yellow]'}")
+    console.print(f"Fail2Ban: {'[green]Active[/green]' if f2b.get('active') else '[yellow]Inactive[/yellow]'}")
+    if f2b.get("jails"):
+        console.print(f"Jails: {', '.join(f2b['jails'])}")
+
+
+@firewall.command("ufw-enable")
+def firewall_enable_cmd():
+    result = core.firewall_enable()
+    console.print("[green]UFW enabled[/green]" if result.get("ok") else "[red]Failed to enable UFW[/red]")
+
+
+@firewall.command("ufw-disable")
+def firewall_disable_cmd():
+    result = core.firewall_disable()
+    console.print("[green]UFW disabled[/green]" if result.get("ok") else "[red]Failed[/red]")
+
+
+@firewall.command("allow")
+@click.argument("port")
+@click.option("--proto", default="tcp")
+def firewall_allow_cmd(port, proto):
+    result = core.firewall_allow(port, proto)
+    console.print(f"[green]Allowed {port}/{proto}[/green]" if result.get("ok") else "[red]Failed[/red]")
+
+
+@firewall.command("deny")
+@click.argument("port")
+@click.option("--proto", default="tcp")
+def firewall_deny_cmd(port, proto):
+    result = core.firewall_deny(port, proto)
+    console.print(f"[green]Denied {port}/{proto}[/green]" if result.get("ok") else "[red]Failed[/red]")
+
+
+@cli.command("serve")
+@click.option("--host", default="127.0.0.1", help="Bind host")
+@click.option("--port", default=8080, help="Bind port")
+def serve(host, port):
+    try:
+        import uvicorn
+    except ImportError:
+        console.print("[red]uvicorn not installed. Run: pip install 'atulya-launch[web]'[/red]")
+        sys.exit(1)
+    core.ensure_dirs()
+    from .web.app import create_app
+    app = create_app()
+    console.print(f"[green]Dashboard:[/green] http://{host}:{port}")
+    console.print(f"[dim]Login: admin / admin[/dim]")
+    uvicorn.run(app, host=host, port=port, log_level="info")
+
+
+@cli.command(name="list")
+def list_tools():
+    tools = core.discover_all_tools()
+    table = Table(box=box.ROUNDED)
+    table.add_column("Tool", style="cyan", no_wrap=True)
+    table.add_column("Package", style="blue")
     table.add_column("Status", style="green")
-    table.add_column("Deployed", style="yellow")
-    for name, model_data in models.items():
-        table.add_row(
-            name,
-            model_data.get("model_path", "-"),
-            str(model_data.get("port", "-")),
-            model_data.get("status", "-"),
-            model_data.get("deployed_at", "-"),
-        )
+    table.add_column("Version", style="yellow")
+    table.add_column("Description")
+    for t in tools:
+        status = "[green]Installed[/green]" if t["installed"] else "[dim]Not installed[/dim]"
+        ver = t.get("version", "-") if t["installed"] else "-"
+        table.add_row(t["name"], t["package"], status, ver, t["description"])
+    console.print(table)
+    console.print(f"\n[dim]{len(tools)} tools | org: {ATULYA_ORG}[/dim]")
+
+
+@cli.command()
+@click.argument("tool_name")
+def info(tool_name):
+    if tool_name not in ATULYA_TOOLS:
+        console.print(f"[red]Unknown tool: {tool_name}[/red]")
+        console.print(f"Available: {', '.join(ATULYA_TOOLS)}")
+        sys.exit(1)
+    info = core.get_tool_info(tool_name)
+    installed = core.is_installed(tool_name)
+    cfg = core.get_installed_tools().get(tool_name, {})
+    version = cfg.get("version") or core.installed_pip_version(tool_name) or "-"
+    panel = Panel(
+        f"[bold cyan]{tool_name}[/bold cyan]\n"
+        f"[blue]Package:[/blue] {info['package']}\n"
+        f"[blue]Description:[/blue] {info['description']}\n"
+        f"[blue]Status:[/blue] {'[green]Installed[/green]' if installed else '[red]Not installed[/red]'}\n"
+        f"[blue]Version:[/blue] {version if installed else '-'}\n"
+        f"[blue]GitHub:[/blue] https://github.com/{ATULYA_ORG}/{tool_name}",
+        title=f"Atulya {tool_name}",
+    )
+    console.print(panel)
+
+
+@cli.command()
+@click.argument("tool_name")
+@click.option("--version", "-v", "ver", default=None, help="Specific version (tag)")
+@click.option("--local", "-l", "local_path", default=None, help="Install from local path")
+def install(tool_name, ver, local_path):
+    if tool_name not in ATULYA_TOOLS:
+        console.print(f"[red]Unknown tool: {tool_name}[/red]")
+        sys.exit(1)
+    if local_path:
+        src = Path(local_path)
+        if not src.exists():
+            console.print(f"[red]Local path not found: {local_path}[/red]")
+            sys.exit(1)
+        with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), transient=True) as p:
+            p.add_task(description=f"Installing {tool_name} from {local_path}...")
+            core.install_local(tool_name, src)
+        console.print(f"[green]Installed {tool_name} from local path[/green]")
+    else:
+        with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), transient=True) as p:
+            p.add_task(description=f"Installing {tool_name} via pip...")
+            ok = core.install_from_pip(tool_name, ver)
+        if ok:
+            installed_ver = ver or "latest"
+            cfg = core.load_config()
+            cfg.setdefault("installed", {})[tool_name] = {"version": installed_ver, "installed_at": __import__("datetime").datetime.now().isoformat()}
+            core.save_config(cfg)
+            console.print(f"[green]Installed {tool_name} ({installed_ver})[/green]")
+        else:
+            console.print(f"[red]Failed to install {tool_name}[/red]")
+            sys.exit(1)
+
+
+@cli.command()
+@click.argument("tool_name")
+def uninstall(tool_name):
+    if tool_name not in ATULYA_TOOLS:
+        console.print(f"[red]Unknown tool: {tool_name}[/red]")
+        sys.exit(1)
+    ok = core.uninstall_pip(tool_name)
+    if not ok:
+        pkg_dir = core.TOOLS_DIR / core.package_name(tool_name)
+        if pkg_dir.exists():
+            import shutil
+            shutil.rmtree(pkg_dir)
+            ok = True
+    if ok:
+        cfg = core.load_config()
+        cfg.get("installed", {}).pop(tool_name, None)
+        core.save_config(cfg)
+        console.print(f"[green]Uninstalled {tool_name}[/green]")
+    else:
+        console.print(f"[red]Failed to uninstall {tool_name}[/red]")
+        sys.exit(1)
+
+
+@cli.command()
+@click.argument("tool_name")
+@click.argument("args", nargs=-1)
+def run(tool_name, args):
+    if tool_name not in ATULYA_TOOLS:
+        console.print(f"[red]Unknown tool: {tool_name}[/red]")
+        sys.exit(1)
+    exit_code = core.run_tool(tool_name, list(args))
+    sys.exit(exit_code)
+
+
+@cli.command()
+@click.argument("tool_name", required=False, default=None)
+def update(tool_name=None):
+    targets = [tool_name] if tool_name else ATULYA_TOOLS
+    results = []
+    for name in targets:
+        if name not in ATULYA_TOOLS:
+            console.print(f"[red]Unknown tool: {name}[/red]")
+            sys.exit(1)
+        with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), transient=True) as p:
+            p.add_task(description=f"Checking {name}...")
+            update_info = core.check_update(name)
+        if update_info:
+            results.append((name, update_info))
+            console.print(f"[yellow]{name}: {update_info['current']} -> {update_info['latest']}[/yellow]")
+        else:
+            installed = core.is_installed(name)
+            if installed:
+                console.print(f"[green]{name}: up to date[/green]")
+            else:
+                console.print(f"[dim]{name}: not installed[/dim]")
+
+    if not results:
+        console.print("[green]All tools up to date[/green]")
+        return
+
+    console.print("\nUpdates available. Run [bold]atulya-launch install <tool> --version <ver>[/bold] to update.")
+
+
+@cli.command()
+@click.option("--version", "-v", "ver", default=None, help="Specific version (tag)")
+def self_update(ver):
+    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), transient=True) as p:
+        p.add_task(description="Updating Atulya-Launch...")
+        ok = core.install_from_pip("Atulya-Launch", ver)
+    if ok:
+        console.print(f"[green]Atulya-Launch updated to {ver or 'latest'}[/green]")
+    else:
+        console.print("[red]Self-update failed[/red]")
+        sys.exit(1)
+
+
+@cli.command()
+@click.argument("tool_name")
+@click.option("--count", "-c", default=5, help="Number of recent releases")
+def releases(tool_name, count):
+    if tool_name not in ATULYA_TOOLS:
+        console.print(f"[red]Unknown tool: {tool_name}[/red]")
+        sys.exit(1)
+    try:
+        releases = core.get_github_releases(tool_name, count)
+    except Exception as e:
+        console.print(f"[red]Failed to fetch releases: {e}[/red]")
+        sys.exit(1)
+
+    table = Table(box=box.ROUNDED)
+    table.add_column("Version", style="cyan")
+    table.add_column("Published", style="white")
+    table.add_column("Assets", style="blue")
+    for r in releases:
+        tag = r["tag_name"]
+        published = r.get("published_at", "").split("T")[0] if r.get("published_at") else "-"
+        assets = ", ".join(a["name"] for a in r.get("assets", [])) or "(source only)"
+        table.add_row(tag, published, assets)
     console.print(table)
 
 
-@ai.command()
-@click.argument("model_name")
-@click.option("--lines", "-n", default=50, help="Number of lines")
-def logs(model_name, lines):
-    result = core.ai_logs(model_name, lines)
-    if "error" in result:
-        console.print(f"[red]{result['error']}[/red]")
-        sys.exit(1)
-    console.print(f"[bold]Logs for AI model '{model_name}':[/bold]")
-    for line in result.get("lines", []):
-        console.print(line)
-
-
-@cli.group()
-def config():
-    pass
-
-
-@config.command()
-def show():
-    config_data = core.config_show()
-    if not config_data:
-        console.print("[yellow]No configuration found. Run 'init' first.[/yellow]")
-        return
-    import yaml as yaml_lib
-    console.print(yaml_lib.dump(config_data, default_flow_style=False))
-
-
-@config.command()
-@click.argument("key_path")
-@click.argument("value")
-def set(key_path, value):
-    parsed_value = value
-    if value.lower() in ("true", "false"):
-        parsed_value = value.lower() == "true"
-    elif value.isdigit():
-        parsed_value = int(value)
-    result = core.config_set(key_path, parsed_value)
-    console.print(f"[green]Set {key_path} = {parsed_value}[/green]")
-
-
-@config.command()
-@click.argument("output_path", default=None, required=False)
-def export(output_path):
-    result = core.config_export(output_path)
-    if "error" in result:
-        console.print(f"[red]{result['error']}[/red]")
-        sys.exit(1)
-    console.print(f"[green]Configuration exported to {result.get('path')}[/green]")
-
-
-@config.command()
-@click.argument("input_path")
-def import_config(input_path):
-    result = core.config_import(input_path)
-    if "error" in result:
-        console.print(f"[red]{result['error']}[/red]")
-        sys.exit(1)
-    console.print(f"[green]Configuration imported from {input_path}[/green]")
+@cli.command()
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def status(as_json):
+    tools = core.discover_all_tools()
+    data = {}
+    for t in tools:
+        name = t["name"]
+        data[name] = {
+            "installed": t["installed"],
+            "description": t["description"],
+            "version": t.get("version") if t["installed"] else None,
+        }
+    if as_json:
+        console.print(json.dumps(data, indent=2))
+    else:
+        table = Table(box=box.ROUNDED)
+        table.add_column("Tool", style="cyan")
+        table.add_column("Installed", style="green")
+        table.add_column("Version", style="yellow")
+        for name, info in data.items():
+            status_str = "[green]Yes[/green]" if info["installed"] else "[red]No[/red]"
+            ver = info.get("version") or "-"
+            table.add_row(name, status_str, ver)
+        console.print(table)
 
 
 def main():

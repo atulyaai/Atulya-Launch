@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% set active = "docker" %}
+{% block title %}Docker - Atulya Launch{% endblock %}
+{% block content %}
+<div class="header">
+    <h2>Docker Containers</h2>
+</div>
+
+{% if not docker_available %}
+<div class="alert alert-danger">
+    Docker is not installed or not accessible on this system. Install Docker to manage containers.
+</div>
+{% endif %}
+
+{% if containers %}
+<div class="section">
+    <div class="section-header">
+        <h3>Running Containers</h3>
+    </div>
+    <table>
+        <thead><tr><th>Name</th><th>Image</th><th>Status</th><th>Ports</th><th>Actions</th></tr></thead>
+        <tbody>
+        {% for c in containers %}
+        <tr>
+            <td><strong>{{ c.Names }}</strong></td>
+            <td>{{ c.Image }}</td>
+            <td><span class="badge {% if 'Up' in c.Status %}badge-success{% else %}badge-danger{% endif %}">{{ c.Status }}</span></td>
+            <td>{{ c.Ports }}</td>
+            <td>
+                <form method="POST" action="/docker/stop" style="display:inline">
+                    <input type="hidden" name="name" value="{{ c.Names }}">
+                    <button class="btn btn-danger" style="padding:4px 10px;font-size:12px">Stop</button>
+                </form>
+                <form method="POST" action="/docker/start" style="display:inline">
+                    <input type="hidden" name="name" value="{{ c.Names }}">
+                    <button class="btn btn-ghost" style="padding:4px 10px;font-size:12px">Start</button>
+                </form>
+                <form method="POST" action="/docker/remove" style="display:inline" onsubmit="return confirm('Force remove {{ c.Names }}?')">
+                    <input type="hidden" name="name" value="{{ c.Names }}">
+                    <button class="btn btn-danger" style="padding:4px 10px;font-size:12px">Remove</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="empty-state">No containers running.</div>
+{% endif %}
+
+<div class="section">
+    <div class="section-header">
+        <h3>One-Click Deploy</h3>
+    </div>
+    <div class="grid">
+    {% for name, app in available.items() %}
+    <div class="card">
+        <h3>{{ app.description }}</h3>
+        <p style="font-size:12px;color:var(--text-dim);margin:6px 0">{{ app.image }}</p>
+        {% if app.ports %}
+        <div style="margin:6px 0">{% for hp, cp in app.ports.items() %}<span class="pill">{{ hp }}:{{ cp }}</span>{% endfor %}</div>
+        {% endif %}
+        <form method="POST" action="/docker/run" style="margin-top:10px">
+            <div class="form-group">
+                <input type="text" name="name" placeholder="Container name" required style="width:100%;padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px">
+            </div>
+            <input type="hidden" name="image" value="{{ name }}">
+            <button type="submit" class="btn btn-primary" style="font-size:12px" {% if not docker_available %}disabled{% endif %}>Deploy</button>
+        </form>
+    </div>
+    {% endfor %}
+    </div>
+</div>
+
+{% if images %}
+<div class="section">
+    <div class="section-header">
+        <h3>Local Images</h3>
+    </div>
+    <table>
+        <thead><tr><th>Repository</th><th>Tag</th><th>Size</th><th>Created</th></tr></thead>
+        <tbody>
+        {% for img in images %}
+        <tr>
+            <td>{{ img.Repository }}</td>
+            <td>{{ img.Tag }}</td>
+            <td>{{ img.Size }}</td>
+            <td>{{ img.CreatedSince }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+{% endblock %}

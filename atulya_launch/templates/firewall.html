@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% set active = "firewall" %}
+{% block title %}Firewall - Atulya Launch{% endblock %}
+{% block content %}
+<div class="header">
+    <h2>Firewall & Security</h2>
+</div>
+
+<div class="grid">
+    <div class="card">
+        <h3>UFW Status</h3>
+        {% if status.installed %}
+        <div class="value {% if status.active %}success{% else %}warning{% endif %}">{% if status.active %}Active{% else %}Inactive{% endif %}</div>
+        {% else %}
+        <div class="value" style="font-size:16px">Not Installed</div>
+        {% endif %}
+        <div style="margin-top:12px">
+            {% if not status.active %}
+            <form method="POST" action="/firewall/ufw/enable" style="display:inline">
+                <button class="btn btn-success" style="font-size:12px">Enable UFW</button>
+            </form>
+            {% else %}
+            <form method="POST" action="/firewall/ufw/disable" style="display:inline">
+                <button class="btn btn-danger" style="font-size:12px">Disable UFW</button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+    <div class="card">
+        <h3>Fail2Ban</h3>
+        {% if fail2ban.installed %}
+        <div class="value {% if fail2ban.active %}success{% else %}warning{% endif %}">{% if fail2ban.active %}Active{% else %}Inactive{% endif %}</div>
+        {% if fail2ban.jails %}
+        <div style="margin-top:8px">{% for jail in fail2ban.jails %}<span class="pill">{{ jail }}</span>{% endfor %}</div>
+        {% endif %}
+        {% else %}
+        <div class="value" style="font-size:16px">Not Installed</div>
+        {% endif %}
+        <div style="margin-top:12px">
+            <form method="POST" action="/firewall/fail2ban/restart" style="display:inline">
+                <button class="btn btn-ghost" style="font-size:12px">Restart Fail2Ban</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="section">
+    <div class="section-header">
+        <h3>Firewall Rules</h3>
+        <button class="btn btn-primary" onclick="document.getElementById('ruleModal').classList.add('active')">+ Add Rule</button>
+    </div>
+    {% if rules %}
+    <table>
+        <thead><tr><th>Rule</th></tr></thead>
+        <tbody>
+        {% for rule in rules %}
+        <tr><td><code>{{ rule }}</code></td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">No firewall rules configured.</div>
+    {% endif %}
+</div>
+
+<div class="section">
+    <div class="section-header">
+        <h3>Quick Actions</h3>
+    </div>
+    <div class="card">
+        <span class="pill">Allow SSH (22)</span>
+        <span class="pill">Allow HTTP (80)</span>
+        <span class="pill">Allow HTTPS (443)</span>
+        <span class="pill">Allow Panel (8080)</span>
+    </div>
+</div>
+
+<div class="modal-overlay" id="ruleModal">
+    <div class="modal">
+        <h3>Add Firewall Rule</h3>
+        <form method="POST" action="/firewall/ufw/allow">
+            <div class="form-group">
+                <label>Port</label>
+                <input type="text" name="port" placeholder="80" required>
+            </div>
+            <div class="form-group">
+                <label>Protocol</label>
+                <select name="proto">
+                    <option value="tcp">TCP</option>
+                    <option value="udp">UDP</option>
+                    <option value="both">Both</option>
+                </select>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" onclick="this.closest('.modal-overlay').classList.remove('active')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Allow</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

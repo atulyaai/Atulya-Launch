@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% set active = "apps" %}
+{% block title %}App Installer - Atulya Launch{% endblock %}
+{% block content %}
+<div class="header">
+    <h2>App Installer</h2>
+</div>
+
+{% if installed %}
+<div class="section">
+    <div class="section-header">
+        <h3>Installed Apps</h3>
+    </div>
+    <table>
+        <thead><tr><th>App</th><th>Domain</th><th>Installed</th><th>Actions</th></tr></thead>
+        <tbody>
+        {% for name, info in installed.items() %}
+        <tr>
+            <td><strong>{{ name }}</strong></td>
+            <td>{{ info.domain }}</td>
+            <td>{{ info.installed_at[:10] }}</td>
+            <td>
+                <form method="POST" action="/apps/uninstall" style="display:inline" onsubmit="return confirm('Uninstall {{ name }}?')">
+                    <input type="hidden" name="app_name" value="{{ name }}">
+                    <button class="btn btn-danger" style="padding:4px 10px;font-size:12px">Uninstall</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<div class="section">
+    <div class="section-header">
+        <h3>Available Apps</h3>
+    </div>
+    <div class="grid">
+    {% for name, app in available.items() %}
+    <div class="card" style="cursor:pointer" onclick="document.getElementById('installModal{{ name }}').classList.add('active')">
+        <h3>{{ app.name }}</h3>
+        <p style="font-size:13px;color:var(--text-dim);margin:8px 0">{{ app.description }}</p>
+        <div>{% for req in app.requires %}<span class="pill">{{ req }}</span>{% endfor %}</div>
+    </div>
+
+    <div class="modal-overlay" id="installModal{{ name }}">
+        <div class="modal">
+            <h3>Install {{ app.name }}</h3>
+            <form method="POST" action="/apps/install">
+                <input type="hidden" name="app_name" value="{{ name }}">
+                <div class="form-group">
+                    <label>Domain</label>
+                    <input type="text" name="domain" placeholder="example.com" required>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-ghost" onclick="this.closest('.modal-overlay').classList.remove('active')">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Install</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    {% endfor %}
+    </div>
+</div>
+{% endblock %}

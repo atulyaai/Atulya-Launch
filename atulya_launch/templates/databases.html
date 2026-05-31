@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% set active = "databases" %}
+{% block title %}Databases - Atulya Launch{% endblock %}
+{% block content %}
+<div class="header">
+    <h2>Databases</h2>
+    <button class="btn btn-primary" onclick="document.getElementById('createModal').classList.add('active')">+ Create Database</button>
+</div>
+
+{% if databases %}
+<table>
+    <thead><tr><th>Name</th><th>Type</th><th>Username</th><th>Created</th><th>Actions</th></tr></thead>
+    <tbody>
+    {% for db in databases %}
+    <tr>
+        <td><strong>{{ db.name }}</strong></td>
+        <td><span class="badge badge-info">{{ db.db_type }}</span></td>
+        <td>{{ db.username or '-' }}</td>
+        <td>{{ db.created_at[:10] }}</td>
+        <td>
+            <form method="POST" action="/databases/{{ db.id }}/backup" style="display:inline">
+                <button class="btn btn-ghost" style="padding:4px 10px;font-size:12px">Backup</button>
+            </form>
+            <form method="POST" action="/databases/delete" style="display:inline" onsubmit="return confirm('Delete {{ db.name }}?')">
+                <input type="hidden" name="db_id" value="{{ db.id }}">
+                <button class="btn btn-danger" style="padding:4px 10px;font-size:12px">Delete</button>
+            </form>
+        </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="empty-state">No databases yet.</div>
+{% endif %}
+
+<div class="modal-overlay" id="createModal">
+    <div class="modal">
+        <h3>Create Database</h3>
+        <form method="POST" action="/databases/create">
+            <div class="form-group">
+                <label>Name</label>
+                <input type="text" name="name" placeholder="mydb" required>
+            </div>
+            <div class="form-group">
+                <label>Type</label>
+                <select name="db_type">
+                    <option value="mysql">MySQL</option>
+                    <option value="mariadb">MariaDB</option>
+                    <option value="postgresql">PostgreSQL</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Username (optional)</label>
+                <input type="text" name="username">
+            </div>
+            <div class="form-group">
+                <label>Password (optional)</label>
+                <input type="password" name="password">
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" onclick="this.closest('.modal-overlay').classList.remove('active')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Create</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

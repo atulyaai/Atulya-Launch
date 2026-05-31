@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% set active = "ssl" %}
+{% block title %}SSL Certificates - Atulya Launch{% endblock %}
+{% block content %}
+<div class="header">
+    <h2>SSL Certificates</h2>
+    <button class="btn btn-primary" onclick="document.getElementById('issueModal').classList.add('active')">+ Issue Certificate</button>
+</div>
+
+{% if certs %}
+<table>
+    <thead><tr><th>Domain</th><th>Issuer</th><th>Expires</th><th>Auto-Renew</th><th>Actions</th></tr></thead>
+    <tbody>
+    {% for cert in certs %}
+    <tr>
+        <td><strong>{{ cert.domain }}</strong></td>
+        <td>{{ cert.issuer or '-' }}</td>
+        <td>{{ cert.expires_at or 'Unknown' }}</td>
+        <td>{% if cert.auto_renew %}<span class="badge badge-success">Yes</span>{% else %}<span class="badge badge-warning">No</span>{% endif %}</td>
+        <td>
+            <form method="POST" action="/ssl/renew" style="display:inline">
+                <input type="hidden" name="cert_id" value="{{ cert.id }}">
+                <button class="btn btn-ghost" style="padding:4px 10px;font-size:12px">Renew</button>
+            </form>
+            <form method="POST" action="/ssl/delete" style="display:inline" onsubmit="return confirm('Delete cert for {{ cert.domain }}?')">
+                <input type="hidden" name="cert_id" value="{{ cert.id }}">
+                <button class="btn btn-danger" style="padding:4px 10px;font-size:12px">Delete</button>
+            </form>
+        </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="empty-state">No SSL certificates yet.</div>
+{% endif %}
+
+<div class="modal-overlay" id="issueModal">
+    <div class="modal">
+        <h3>Issue SSL Certificate</h3>
+        <form method="POST" action="/ssl/issue">
+            <div class="form-group">
+                <label>Domain</label>
+                <input type="text" name="domain" placeholder="example.com" required>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" onclick="this.closest('.modal-overlay').classList.remove('active')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Issue (Let's Encrypt)</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

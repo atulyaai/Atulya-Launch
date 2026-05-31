@@ -19,6 +19,8 @@ env/
 
 # Project data
 .atulya-launch/
+.atulya/
+.atulya-*/
 *.db
 *.sqlite
 

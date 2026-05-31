@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% set active = "email" %}
+{% block title %}Email - Atulya Launch{% endblock %}
+{% block content %}
+<div class="header">
+    <h2>Email Accounts</h2>
+    <button class="btn btn-primary" onclick="document.getElementById('createModal').classList.add('active')">+ Add Account</button>
+</div>
+
+{% if accounts %}
+<table>
+    <thead><tr><th>Address</th><th>Quota</th><th>Created</th><th>Actions</th></tr></thead>
+    <tbody>
+    {% for acc in accounts %}
+    <tr>
+        <td><strong>{{ acc.mailbox }}@{{ acc.domain }}</strong></td>
+        <td>{{ acc.quota_mb }} MB</td>
+        <td>{{ acc.created_at[:10] }}</td>
+        <td>
+            <form method="POST" action="/email/account/delete" style="display:inline">
+                <input type="hidden" name="account_id" value="{{ acc.id }}">
+                <button class="btn btn-danger" style="padding:4px 10px;font-size:12px">Delete</button>
+            </form>
+        </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="empty-state">No email accounts yet.</div>
+{% endif %}
+
+<div class="modal-overlay" id="createModal">
+    <div class="modal">
+        <h3>Create Email Account</h3>
+        <form method="POST" action="/email/account/create">
+            <div class="form-group">
+                <label>Domain</label>
+                <input type="text" name="domain" placeholder="example.com" required>
+            </div>
+            <div class="form-group">
+                <label>Mailbox</label>
+                <input type="text" name="mailbox" placeholder="user" required>
+            </div>
+            <div class="form-group">
+                <label>Password</label>
+                <input type="password" name="password" required>
+            </div>
+            <div class="form-group">
+                <label>Quota (MB)</label>
+                <input type="number" name="quota_mb" value="1024">
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" onclick="this.closest('.modal-overlay').classList.remove('active')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Create</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

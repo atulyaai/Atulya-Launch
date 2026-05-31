@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% set active = "settings" %}
+{% block title %}Settings - Atulya Launch{% endblock %}
+{% block content %}
+<div class="header">
+    <h2>Settings</h2>
+</div>
+
+{% if request.query_params.get('error') %}
+<div class="alert alert-danger">{{ request.query_params.get('error') }}</div>
+{% endif %}
+{% if request.query_params.get('success') %}
+<div class="alert alert-success">Settings saved successfully.</div>
+{% endif %}
+
+<div class="section">
+    <h3>Change Password</h3>
+    <div class="card" style="max-width:400px">
+        <form method="POST" action="/settings/password">
+            <div class="form-group">
+                <label>Current Password</label>
+                <input type="password" name="current_password" required>
+            </div>
+            <div class="form-group">
+                <label>New Password</label>
+                <input type="password" name="new_password" required>
+            </div>
+            <button type="submit" class="btn btn-primary">Update Password</button>
+        </form>
+    </div>
+</div>
+
+<div class="section">
+    <div class="section-header">
+        <h3>Users</h3>
+        {% if user.role == 'admin' %}
+        <button class="btn btn-primary" onclick="document.getElementById('userModal').classList.add('active')">+ Add User</button>
+        {% endif %}
+    </div>
+    <table>
+        <thead><tr><th>Username</th><th>Role</th><th>Created</th><th>Last Login</th><th>Actions</th></tr></thead>
+        <tbody>
+        {% for u in users %}
+        <tr>
+            <td><strong>{{ u.username }}</strong></td>
+            <td><span class="badge {% if u.role == 'admin' %}badge-info{% else %}badge-success{% endif %}">{{ u.role }}</span></td>
+            <td>{{ u.created_at[:10] }}</td>
+            <td>{{ u.last_login[:19] if u.last_login else 'Never' }}</td>
+            <td>
+                {% if user.role == 'admin' and u.id != user.id %}
+                <form method="POST" action="/settings/user/delete" style="display:inline" onsubmit="return confirm('Delete user {{ u.username }}?')">
+                    <input type="hidden" name="user_id" value="{{ u.id }}">
+                    <button class="btn btn-danger" style="padding:4px 10px;font-size:12px">Delete</button>
+                </form>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="section">
+    <h3>Panel Configuration</h3>
+    <div class="card">
+        <p style="font-size:13px;color:var(--text-dim)">Config directory: <code>{{ panel_config.get('api_token', '')[:8] }}...</code></p>
+        <p style="font-size:13px;color:var(--text-dim);margin-top:8px">Bind host: {{ settings.get('bind_host', '127.0.0.1') }}</p>
+        <p style="font-size:13px;color:var(--text-dim);margin-top:4px">Bind port: {{ settings.get('bind_port', 8080) }}</p>
+    </div>
+</div>
+
+<div class="modal-overlay" id="userModal">
+    <div class="modal">
+        <h3>Create User</h3>
+        <form method="POST" action="/settings/user/create">
+            <div class="form-group">
+                <label>Username</label>
+                <input type="text" name="username" required>
+            </div>
+            <div class="form-group">
+                <label>Password</label>
+                <input type="password" name="password" required>
+            </div>
+            <div class="form-group">
+                <label>Role</label>
+                <select name="role">
+                    <option value="user">User</option>
+                    <option value="admin">Admin</option>
+                </select>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" onclick="this.closest('.modal-overlay').classList.remove('active')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Create</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

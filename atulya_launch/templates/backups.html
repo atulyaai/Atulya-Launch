@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% set active = "backups" %}
+{% block title %}Backups - Atulya Launch{% endblock %}
+{% block content %}
+<div class="header">
+    <h2>Backups</h2>
+    <button class="btn btn-primary" onclick="document.getElementById('createModal').classList.add('active')">+ Create Backup</button>
+</div>
+
+{% if backups %}
+<table>
+    <thead><tr><th>Name</th><th>Created</th><th>Size</th><th>Actions</th></tr></thead>
+    <tbody>
+    {% for name, bak in backups.items() %}
+    <tr>
+        <td><strong>{{ name }}</strong></td>
+        <td>{{ bak.created_at or '-' }}</td>
+        <td>{{ bak.size }} bytes</td>
+        <td>
+            <form method="POST" action="/backups/restore" style="display:inline" onsubmit="return confirm('Restore backup {{ name }}? This will overwrite current config.')">
+                <input type="hidden" name="name" value="{{ name }}">
+                <button class="btn btn-ghost" style="padding:4px 10px;font-size:12px">Restore</button>
+            </form>
+        </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="empty-state">No backups yet.</div>
+{% endif %}
+
+<div class="modal-overlay" id="createModal">
+    <div class="modal">
+        <h3>Create Backup</h3>
+        <form method="POST" action="/backups/create">
+            <div class="form-group">
+                <label>Name (optional, auto-generated if empty)</label>
+                <input type="text" name="name" placeholder="backup-20260101">
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" onclick="this.closest('.modal-overlay').classList.remove('active')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Create Backup</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

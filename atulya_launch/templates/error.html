@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Error - Atulya Launch{% endblock %}
+{% block content %}
+<div class="header">
+    <h2>Error</h2>
+</div>
+<div class="alert alert-danger">{{ error }}</div>
+<a href="/dashboard" class="btn btn-ghost">Back to Dashboard</a>
+{% endblock %}

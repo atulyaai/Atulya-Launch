@@ -78,10 +78,11 @@ def create_account(body: AccountCreate, user: dict = Depends(get_current_user)):
         "created_at": datetime.datetime.now().isoformat(),
     }
     _save_email(data)
-    result = utils.run_command(
-        ["useradd", "-m", "-s", "/usr/sbin/nologin", body.email.split("@")[0]],
-        check=False,
-    )
+    if utils.is_linux():
+        utils.run_command(
+            ["useradd", "-m", "-s", "/usr/sbin/nologin", body.email.split("@")[0]],
+            check=False,
+        )
     return {"status": "created", "email": body.email}
 
 

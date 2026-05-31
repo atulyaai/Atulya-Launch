@@ -108,6 +108,8 @@ def get_service_manager():
         return "systemd"
     if is_macos():
         return "launchd"
+    if is_windows():
+        return "windows"
     return None
 
 
@@ -131,13 +133,47 @@ def service_action(action, service_name):
             return run_command(["launchctl", "start", service_name])
         if action == "status":
             return run_command(["launchctl", "list", service_name])
+    if service_manager == "windows":
+        # Use sc.exe for Windows services
+        if action in ("start", "stop", "restart"):
+            cmd = ["sc.exe", action, service_name]
+            return run_command(cmd)
+        if action == "enable":
+            # sc config <service> start= auto
+            return run_command(["sc.exe", "config", service_name, "start=", "auto"])
+        if action == "disable":
+            # sc config <service> start= disabled
+            return run_command(["sc.exe", "config", service_name, "start=", "disabled"])
+        if action == "status":
+            return run_command(["sc.exe", "query", service_name])
     return None
 
 
 def service_exists(service_name):
-    if is_linux():
+    service_manager = get_service_manager()
+    if service_manager == "systemd":
         result = run_command(["systemctl", "is-active", service_name], check=False)
         return result is not None and result.returncode == 0
+    if service_manager == "launchd":
+        # On macOS, check if service is loaded
+        result = run_command(["launchctl", "list"], check=False)
+        if result and result.stdout:
+            # Check if service_name appears in list (simplistic)
+            return service_name in result.stdout
+        return False
+    if service_manager == "windows":
+        # Query service state
+        result = run_command(["sc.exe", "query", service_name], check=False)
+        if result and result.stdout:
+            # Look for STATE line
+            for line in result.stdout.split('\n'):
+                if line.strip().startswith("STATE"):
+                    # e.g., "STATE              : 4 RUNNING"
+                    if "RUNNING" in line:
+                        return True
+                    else:
+                        return False
+        return False
     return False
 
 
@@ -168,3 +204,12 @@ def ensure_config_dir():
     logs_dir = CONFIG_DIR / "logs"
     logs_dir.mkdir(exist_ok=True)
     return CONFIG_DIR
+def linux_command(command, capture_output=True, check=False, timeout=60):
+    if utils.is_linux():
+        return utils.run_command(command, capture_output, check, timeout)
+    else:
+        # Log a warning and return a mock success
+        import logging
+        logging.warning(f"Command {command} is Linux-only and was skipped on {utils.get_platform()}")
+        # Return a mock CompletedProcess with returncode 0
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")

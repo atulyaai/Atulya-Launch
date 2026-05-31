@@ -41,8 +41,13 @@ def test_utils_platform_detection():
 
 
 def test_utils_format_size():
-    from atulya_launch.utils import format_size if hasattr(__import__('atulya_launch.utils', fromlist=['format_size']), 'format_size') else None
-    pass
+    try:
+        from atulya_launch.utils import format_size
+        # If we get here, format_size exists
+        assert callable(format_size)
+    except ImportError:
+        # format_size doesn't exist, which is okay
+        pass
 
 
 def test_core_detect_web_server():

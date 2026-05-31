@@ -112,7 +112,7 @@ def create_app() -> FastAPI:
     from atulya_launch.web.api.bandwidthlimit import router as bandwidthlimit_router
     from atulya_launch.web.api.dbimportexport import router as dbimportexport_router
     from atulya_launch.web.api.multiuser import router as multiuser_router
-    from atulya_launch.web.api.plugins import router as plugins_router
+    from atulya_launch.web.api.plugin_system import router as plugins_router
     from atulya_launch.web.api.migration import router as migration_router
     from atulya_launch.web.api.emailforwarding import router as emailforwarding_router
     from atulya_launch.web.api.healthdashboard import router as healthdashboard_router
@@ -205,6 +205,21 @@ def create_app() -> FastAPI:
     app.include_router(portscan_router)
     app.include_router(letsencryptwildcard_router)
     app.include_router(clouddns_router)
+
+    # ── Plugins ────────────────────────────────────────────────────────
+    from atulya_launch.web.api.plugins.cms_installer import router as cms_installer_router
+    from atulya_launch.web.api.plugins.security_advisor import router as security_advisor_router
+    from atulya_launch.web.api.plugins.webmail import router as webmail_plugin_router
+    from atulya_launch.web.api.plugins.antivirus import router as antivirus_router
+    from atulya_launch.web.api.plugins.reseller import router as reseller_router
+    from atulya_launch.web.api.plugins.analytics import router as analytics_router
+
+    app.include_router(cms_installer_router)
+    app.include_router(security_advisor_router)
+    app.include_router(webmail_plugin_router)
+    app.include_router(antivirus_router)
+    app.include_router(reseller_router)
+    app.include_router(analytics_router)
 
     # ── Aggregated dashboard endpoint ──────────────────────────────────
     @app.get("/api/dashboard/stats")

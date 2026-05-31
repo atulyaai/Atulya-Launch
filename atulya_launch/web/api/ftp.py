@@ -1,14 +1,32 @@
 """FTP account management API (vsftpd)."""
 
 import os
-import crypt
 import subprocess
+import sys
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from atulya_launch import utils
 from atulya_launch.web.auth import get_current_user
+
+# Mock crypt module for Windows compatibility
+if sys.platform == "win32":
+    import hashlib
+    import secrets
+    class MockCrypt:
+        @staticmethod
+        def crypt(password, salt=None):
+            # Simple hash for demo purposes
+            if salt is None:
+                salt = secrets.token_hex(8)
+            return f"{salt}${hashlib.sha256((password + salt).encode()).hexdigest()}"
+        
+        @staticmethod
+        def mksalt(method=None):
+            return secrets.token_hex(8)
+    
+    crypt = MockCrypt()
 
 router = APIRouter(prefix="/api/ftp", tags=["ftp"])
 

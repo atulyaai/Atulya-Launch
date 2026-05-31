@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% set active = "redirects" %}
+{% block title %}Redirects - Atulya Launch{% endblock %}
+{% block content %}
+<div class="header">
+    <h2>URL Redirects</h2>
+    <button class="btn btn-primary" onclick="document.getElementById('redirectModal').classList.add('active')">+ Add Redirect</button>
+</div>
+
+{% if redirects %}
+<table>
+    <thead><tr><th>Domain</th><th>Source</th><th>Target</th><th>Type</th><th>Actions</th></tr></thead>
+    <tbody>
+    {% for key, r in redirects.items() %}
+    <tr>
+        <td><strong>{{ r.domain }}</strong></td>
+        <td><code>{{ r.source }}</code></td>
+        <td><code>{{ r.target }}</code></td>
+        <td><span class="badge badge-info">{{ r.type }}</span></td>
+        <td>
+            <form method="POST" action="/redirects/delete" style="display:inline" onsubmit="return confirm('Delete redirect?')">
+                <input type="hidden" name="domain" value="{{ r.domain }}">
+                <input type="hidden" name="source_path" value="{{ r.source }}">
+                <button class="btn btn-danger" style="padding:4px 10px;font-size:12px">Delete</button>
+            </form>
+        </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="empty-state">No redirects configured.</div>
+{% endif %}
+
+<div class="modal-overlay" id="redirectModal">
+    <div class="modal" style="max-width:450px">
+        <h3>Add Redirect</h3>
+        <form method="POST" action="/redirects/create">
+            <div class="form-group">
+                <label>Domain</label>
+                <select name="domain" class="form-control" required>
+                    {% for d in domains %}
+                    <option value="{{ d }}">{{ d }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Source Path</label>
+                <input type="text" name="source_path" placeholder="/old-page" required>
+            </div>
+            <div class="form-group">
+                <label>Target URL</label>
+                <input type="text" name="target_url" placeholder="https://example.com/new-page" required>
+            </div>
+            <div class="form-group">
+                <label>Redirect Type</label>
+                <select name="redirect_type" class="form-control">
+                    <option value="301">301 Permanent</option>
+                    <option value="302">302 Temporary</option>
+                    <option value="307">307 Temporary (preserve method)</option>
+                </select>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" onclick="this.closest('.modal-overlay').classList.remove('active')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Add Redirect</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

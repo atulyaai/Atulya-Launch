@@ -7,9 +7,12 @@ websites, databases, email, DNS, SSL, firewalls, Docker containers, and more.
 It is designed as a lightweight, open-source alternative to cPanel, Plesk,
 HestiaCP, and aaPanel.
 
-> **Status: Beta** - Core features are implemented and tested (59 tests passing).
-> Production deployment on Ubuntu 22.04/24.04 is recommended after running the
-> security audit checklist below.
+> **Status: production scaffold / active hardening.** The panel has a working
+> FastAPI app, CLI, SQLite auth/session layer, audit logging, installers, and a
+> broad API surface, but it is not yet a full production cPanel replacement.
+> The remaining work is service integration: DNS, mail, webserver, SSL, SSH,
+> packaging, and migration flows must pass clean-host tests before a production
+> ready claim.
 
 ## What's Included
 
@@ -189,6 +192,7 @@ atulya_launch/
   core.py              # Core logic: sites, backups, SSL, firewall, monitoring
   utils.py             # Platform helpers, template rendering
   docker.py            # Docker container management
+  drivers/             # OS driver scaffold: Linux, macOS, Windows
   web/
     __init__.py
     app.py             # FastAPI application factory
@@ -212,6 +216,17 @@ templates/             # Jinja2 HTML templates
 tests/                 # 59 tests (unit + integration + web)
 scripts/               # Installers (bash, PowerShell, Python)
 ```
+
+### Production Driver Scaffold
+
+The Phase 2 driver layer lives in `atulya_launch/drivers`.
+
+- Linux: systemd, apt, Nginx, BIND, Postfix, Dovecot.
+- macOS: launchd, Homebrew, Caddy-first web serving.
+- Windows: Windows services, winget, Caddy-first web serving.
+
+Drivers default to dry-run planning so feature modules can be migrated safely
+from ad hoc service commands to a single production integration boundary.
 
 ## Testing
 
@@ -247,7 +262,7 @@ pytest tests/ -v
 Use GitHub private vulnerability reporting. Include: affected version,
 reproduction steps, impact, and suggested fix.
 
-## What's New in v0.3.0+
+## What's New in v1.0.0
 
 ### Migration Import
 - Import sites, databases, and emails from cPanel/Plesk/HestiaCP archives.

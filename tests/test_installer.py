@@ -1,10 +1,12 @@
+"""Tests for the installation script."""
 import subprocess
 import sys
 import unittest
+from typing import Any
 
 
 class InstallerTests(unittest.TestCase):
-    def test_installer_dry_run(self):
+    def test_installer_dry_run(self) -> None:
         result = subprocess.run(
             [sys.executable, "scripts/install.py", "--dry-run", "--local"],
             capture_output=True,

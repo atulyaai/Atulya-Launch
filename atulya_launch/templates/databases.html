@@ -34,6 +34,20 @@
 <div class="empty-state">No databases yet.</div>
 {% endif %}
 
+<div class="section" style="margin-top:24px">
+    <div class="section-header"><h3>phpMyAdmin</h3></div>
+    {% if phpmyadmin_installed %}
+    <div class="card" style="display:flex;align-items:center;gap:16px">
+        <span class="badge badge-success">Installed</span>
+        <a href="/phpmyadmin" target="_blank" class="btn btn-primary">Open phpMyAdmin</a>
+    </div>
+    {% else %}
+    <form method="POST" action="/databases/phpmyadmin/install">
+        <button class="btn btn-primary">Install phpMyAdmin</button>
+    </form>
+    {% endif %}
+</div>
+
 <div class="modal-overlay" id="createModal">
     <div class="modal">
         <h3>Create Database</h3>

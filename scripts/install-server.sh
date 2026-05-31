@@ -67,11 +67,63 @@ install_mysql() {
 }
 
 install_php() {
-    log "Installing PHP-FPM..."
-    apt-get install -y -qq php-fpm php-mysql php-cli php-curl php-gd php-mbstring php-xml php-zip > /dev/null 2>&1
-    systemctl enable php*-fpm > /dev/null 2>&1
-    systemctl start php*-fpm > /dev/null 2>&1
-    log "PHP-FPM installed."
+    log "Installing PHP-FPM (8.1, 8.2, 8.3)..."
+    for ver in 8.1 8.2 8.3; do
+        apt-get install -y -qq php$ver-fpm php$ver-mysql php$ver-cli php$ver-curl php$ver-gd php$ver-mbstring php$ver-xml php$ver-zip > /dev/null 2>&1 || true
+    done
+    systemctl enable php8.3-fpm > /dev/null 2>&1
+    systemctl start php8.3-fpm > /dev/null 2>&1
+    log "PHP-FPM installed (8.1, 8.2, 8.3)."
+}
+
+install_modsecurity() {
+    log "Installing ModSecurity WAF..."
+    apt-get install -y libmodsecurity3 libmodsecurity-dev modsecurity-crs 2>/dev/null || apt-get install -y libmodsecurity3 libmodsecurity-dev 2>/dev/null || true
+
+    # Download OWASP CRS if not present
+    if [ ! -d /etc/modsecurity/crs ]; then
+        mkdir -p /etc/modsecurity/crs
+        wget -qO /tmp/crs.tar.gz https://github.com/coreruleset/coreruleset/archive/v4.0.0.tar.gz 2>/dev/null || true
+        if [ -f /tmp/crs.tar.gz ]; then
+            tar -xzf /tmp/crs.tar.gz -C /etc/modsecurity/crs --strip-components=1 2>/dev/null || true
+            rm -f /tmp/crs.tar.gz
+        fi
+    fi
+
+    # Create ModSecurity directories
+    mkdir -p /etc/nginx/modsec /etc/nginx/modsec/owasp-crs
+
+    # Enable ModSecurity in Nginx
+    cat > /etc/nginx/modsec/main.conf << 'MODSEF'
+# ModSecurity configuration
+SecRuleEngine DetectionOnly
+Include /etc/nginx/modsec/modsecurity.conf
+Include /etc/nginx/modsec/owasp-crs/crs-setup.conf.example
+Include /etc/nginx/modsec/owasp-crs/rules/*.conf
+MODSEF
+
+    # Create basic modsecurity config
+    cat > /etc/nginx/modsec/modsecurity.conf << 'MODSEF2'
+SecRuleEngine DetectionOnly
+SecRequestBodyAccess On
+SecResponseBodyAccess On
+SecDataDir /tmp/modsecurity
+MODSEF2
+
+    # Load Nginx ModSecurity module if available
+    if [ -f /usr/lib/nginx/modules/ngx_http_modsecurity_module.so ]; then
+        if ! grep -q "ngx_http_modsecurity_module" /etc/nginx/nginx.conf 2>/dev/null; then
+            sed -i '1iload_module modules/ngx_http_modsecurity_module.so;' /etc/nginx/nginx.conf
+            log "Nginx ModSecurity module loaded."
+        fi
+    else
+        warn "ngx_http_modsecurity_module.so not found — Nginx must be compiled with --with-compat or --add-module for ModSecurity support."
+    fi
+
+    # Test and reload Nginx
+    nginx -t 2>/dev/null && systemctl reload nginx 2>/dev/null || true
+
+    echo "ModSecurity WAF installed (DetectionOnly mode)."
 }
 
 install_certbot() {
@@ -207,6 +259,7 @@ main() {
     install_nginx
     install_mysql
     install_php
+    install_modsecurity
     install_certbot
     install_docker
     configure_firewall

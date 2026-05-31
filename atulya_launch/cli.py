@@ -390,20 +390,53 @@ def firewall_deny_cmd(port, proto):
 
 
 @cli.command("serve")
-@click.option("--host", default="127.0.0.1", help="Bind host")
-@click.option("--port", default=8080, help="Bind port")
-def serve(host, port):
+@click.option("--host", default=None, help="Bind host (default: 127.0.0.1, or PANEL_HOST env)")
+@click.option("--port", default=None, help="Bind port (default: 8080, or PANEL_PORT env)")
+@click.option("--workers", default=1, help="Number of worker processes")
+@click.option("--https/--no-https", default=False, help="Attempt auto HTTPS via certbot")
+@click.option("--log-level", default="info", help="Log level: debug, info, warning, error")
+def serve(host, port, workers, https, log_level):
     try:
         import uvicorn
     except ImportError:
         console.print("[red]uvicorn not installed. Run: pip install 'atulya-launch[web]'[/red]")
         sys.exit(1)
+    import os as _os
+    host = host or _os.environ.get("PANEL_HOST", "127.0.0.1")
+    port = int(port or _os.environ.get("PANEL_PORT", "8080"))
+    workers = int(_os.environ.get("PANEL_WORKERS", str(workers)))
     core.ensure_dirs()
     from .web.app import create_app
     app = create_app()
-    console.print(f"[green]Dashboard:[/green] http://{host}:{port}")
-    console.print(f"[dim]Login: admin / admin[/dim]")
-    uvicorn.run(app, host=host, port=port, log_level="info")
+
+    if https and host != "127.0.0.1":
+        import subprocess as _sp
+        try:
+            domain = host if host != "0.0.0.0" else _os.environ.get("PANEL_DOMAIN", "")
+            if domain:
+                _sp.run(["certbot", "--nginx", "-d", domain, "--non-interactive", "--agree-tos", "-m", "admin@" + domain], timeout=60)
+                _os.environ["PANEL_HTTPS"] = "1"
+                console.print(f"[green]HTTPS enabled for {domain}[/green]")
+        except Exception as e:
+            console.print(f"[yellow]HTTPS setup skipped: {e}[/yellow]")
+
+    scheme = "https" if _os.environ.get("PANEL_HTTPS", "").lower() in ("1", "true") else "http"
+    console.print(f"[bold green]Atulya Launch v{core.__version__ if hasattr(core, '__version__') else '?'}[/bold green]")
+    console.print(f"[green]Dashboard:[/green] {scheme}://{host if host != '0.0.0.0' else 'localhost'}:{port}")
+    console.print(f"[dim]API docs: {scheme}://{host if host != '0.0.0.0' else 'localhost'}:{port}/api/docs[/dim]")
+    console.print("[dim]Change default password after first login.[/dim]")
+    uvicorn.run(
+        "atulya_launch.web.app:create_app",
+        factory=True,
+        host=host,
+        port=port,
+        workers=workers,
+        log_level=log_level,
+        access_log=True,
+        server_header=False,
+        proxy_headers=True,
+        forwarded_allow_ips="*",
+    )
 
 
 @cli.command(name="list")

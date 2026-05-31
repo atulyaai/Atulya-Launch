@@ -1,6 +1,7 @@
 """Quick plugin verification test."""
 import sys
 import json
+from typing import Any
 sys.path.insert(0, '.')
 
 from atulya_launch.web.api.plugins.cms_installer import CMS_MANIFEST

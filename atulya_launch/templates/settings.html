@@ -16,6 +16,7 @@
 <div class="section">
     <h3>Change Password</h3>
     <div class="card" style="max-width:400px">
+        <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">Password must be at least 8 characters with uppercase, lowercase, and a digit.</p>
         <form method="POST" action="/settings/password">
             <div class="form-group">
                 <label>Current Password</label>
@@ -23,12 +24,77 @@
             </div>
             <div class="form-group">
                 <label>New Password</label>
-                <input type="password" name="new_password" required>
+                <input type="password" name="new_password" required minlength="8">
             </div>
             <button type="submit" class="btn btn-primary">Update Password</button>
         </form>
     </div>
 </div>
+
+{% if user.role == 'admin' %}
+<div class="section">
+    <div class="section-header">
+        <h3>Resellers</h3>
+        <button class="btn btn-primary" onclick="document.getElementById('resellerModal').classList.add('active')">+ Add Reseller</button>
+    </div>
+    {% if resellers %}
+    <table>
+        <thead><tr><th>Username</th><th>Clients</th><th>Max Clients</th><th>Max Sites</th><th>Max DBs</th><th>Disk (MB)</th><th>Actions</th></tr></thead>
+        <tbody>
+        {% for r in resellers %}
+        <tr>
+            <td><strong>{{ r.username }}</strong></td>
+            <td>{{ r.client_count }} / {{ r.max_clients }}</td>
+            <td>{{ r.max_clients }}</td>
+            <td>{{ r.max_sites }}</td>
+            <td>{{ r.max_dbs }}</td>
+            <td>{{ r.disk_limit_mb }}</td>
+            <td>
+                <form method="POST" action="/settings/reseller/delete" style="display:inline" onsubmit="return confirm('Delete reseller {{ r.username }}?')">
+                    <input type="hidden" name="user_id" value="{{ r.id }}">
+                    <button class="btn btn-danger" style="padding:4px 10px;font-size:12px">Delete</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state" style="padding:20px">No resellers defined.</div>
+    {% endif %}
+</div>
+{% endif %}
+
+{% if user.role == 'reseller' %}
+<div class="section">
+    <div class="section-header">
+        <h3>My Clients</h3>
+        <button class="btn btn-primary" onclick="document.getElementById('clientModal').classList.add('active')">+ Add Client</button>
+    </div>
+    {% if my_clients %}
+    <table>
+        <thead><tr><th>Username</th><th>Created</th><th>Last Login</th><th>Actions</th></tr></thead>
+        <tbody>
+        {% for c in my_clients %}
+        <tr>
+            <td><strong>{{ c.username }}</strong></td>
+            <td>{{ c.created_at[:10] }}</td>
+            <td>{{ c.last_login[:19] if c.last_login else 'Never' }}</td>
+            <td>
+                <form method="POST" action="/settings/client/delete" style="display:inline" onsubmit="return confirm('Delete client {{ c.username }}?')">
+                    <input type="hidden" name="client_id" value="{{ c.id }}">
+                    <button class="btn btn-danger" style="padding:4px 10px;font-size:12px">Delete</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state" style="padding:20px">No clients yet.</div>
+    {% endif %}
+</div>
+{% endif %}
 
 <div class="section">
     <div class="section-header">
@@ -43,7 +109,7 @@
         {% for u in users %}
         <tr>
             <td><strong>{{ u.username }}</strong></td>
-            <td><span class="badge {% if u.role == 'admin' %}badge-info{% else %}badge-success{% endif %}">{{ u.role }}</span></td>
+            <td><span class="badge {% if u.role == 'admin' %}badge-info{% elif u.role == 'reseller' %}badge-warning{% else %}badge-success{% endif %}">{{ u.role }}</span></td>
             <td>{{ u.created_at[:10] }}</td>
             <td>{{ u.last_login[:19] if u.last_login else 'Never' }}</td>
             <td>
@@ -61,18 +127,9 @@
 </div>
 
 <div class="section">
-    <h3>Panel Configuration</h3>
-    <div class="card">
-        <p style="font-size:13px;color:var(--text-dim)">Config directory: <code>{{ panel_config.get('api_token', '')[:8] }}...</code></p>
-        <p style="font-size:13px;color:var(--text-dim);margin-top:8px">Bind host: {{ settings.get('bind_host', '127.0.0.1') }}</p>
-        <p style="font-size:13px;color:var(--text-dim);margin-top:4px">Bind port: {{ settings.get('bind_port', 8080) }}</p>
-    </div>
-</div>
-
-<div class="section">
     <div class="section-header">
         <h3>Plans</h3>
-        {% if user.role == 'admin' %}
+        {% if user.role == 'admin' or user.role == 'reseller' %}
         <button class="btn btn-primary" onclick="document.getElementById('planModal').classList.add('active')">+ Add Plan</button>
         {% endif %}
     </div>
@@ -112,7 +169,6 @@
         <form method="POST" action="/settings/branding/set">
             <div class="form-group">
                 <label>Panel Name</label>
-                <input type="text" name="key" value="panel_name" readonly style="display:none">
                 <input type="hidden" name="key" value="panel_name">
                 <input type="text" name="value" value="{{ branding.get('panel_name', 'Atulya Launch') }}" placeholder="Atulya Launch">
             </div>
@@ -128,6 +184,107 @@
         </form>
     </div>
 </div>
+
+<div class="section">
+    <div class="section-header">
+        <h3>API Tokens</h3>
+        <button class="btn btn-primary" onclick="document.getElementById('tokenModal').classList.add('active')">+ New Token</button>
+    </div>
+    {% if api_tokens %}
+    <table>
+        <thead><tr><th>Name</th><th>Token</th><th>Permissions</th><th>Expires</th><th>Actions</th></tr></thead>
+        <tbody>
+        {% for t in api_tokens %}
+        <tr>
+            <td><strong>{{ t.name }}</strong></td>
+            <td><code style="font-size:11px">{{ t.token }}</code></td>
+            <td>{{ t.permissions | join(', ') }}</td>
+            <td style="font-size:12px">{{ t.expires_at[:10] if t.expires_at else 'Never' }}</td>
+            <td>
+                <form method="POST" action="/settings/token/delete" style="display:inline" onsubmit="return confirm('Revoke token {{ t.name }}?')">
+                    <input type="hidden" name="token_id" value="{{ t.id }}">
+                    <button class="btn btn-danger" style="padding:4px 10px;font-size:12px">Revoke</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state" style="padding:20px">No API tokens.</div>
+    {% endif %}
+</div>
+
+<div class="section">
+    <div class="section-header">
+        <h3>Two-Factor Authentication</h3>
+    </div>
+    <div class="card" style="max-width:450px">
+        {% if twofa_enabled %}
+        <p style="font-size:13px;color:var(--success);margin-bottom:12px">2FA is enabled.</p>
+        <form method="POST" action="/settings/2fa/disable">
+            <div class="form-group">
+                <label>Current 2FA Code or Backup Code</label>
+                <input type="text" name="code" placeholder="000000" required>
+            </div>
+            <button type="submit" class="btn btn-danger">Disable 2FA</button>
+        </form>
+        {% else %}
+        <p style="font-size:13px;color:var(--text-dim);margin-bottom:12px">Add an extra layer of security with TOTP-based two-factor authentication.</p>
+        <button class="btn btn-primary" onclick="setup2FA()">Enable 2FA</button>
+        <div id="twofaSetup" style="display:none;margin-top:16px">
+            <p style="font-size:13px;color:var(--text-dim);margin-bottom:8px">Scan this secret with your authenticator app (Google Authenticator, Authy, etc.):</p>
+            <div id="twofaSecret" style="background:var(--bg);padding:12px;border-radius:6px;font-family:monospace;font-size:14px;word-break:break-all;margin-bottom:12px"></div>
+            <div class="form-group">
+                <label>Verify Code</label>
+                <input type="text" id="twofaCode" placeholder="000000" style="width:150px">
+            </div>
+            <button class="btn btn-primary" onclick="verify2FA()">Verify & Enable</button>
+            <div id="twofaBackupCodes" style="margin-top:12px;display:none">
+                <p style="font-size:13px;font-weight:bold">Backup Codes (save these):</p>
+                <pre id="twofaCodesList" style="background:var(--bg);padding:12px;border-radius:6px;font-size:13px"></pre>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+async function setup2FA() {
+    var resp = await fetch('/settings/api/2fa/generate', { method: 'POST' });
+    var data = await resp.json();
+    document.getElementById('twofaSetup').style.display = 'block';
+    document.getElementById('twofaSecret').textContent = data.secret;
+    document.getElementById('twofaSecret').dataset.uri = data.uri;
+}
+async function verify2FA() {
+    var code = document.getElementById('twofaCode').value;
+    if (!code) return alert('Enter the code from your authenticator app');
+    var resp = await fetch('/settings/api/2fa/enable', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({code: code})
+    });
+    var data = await resp.json();
+    if (data.ok) {
+        document.getElementById('twofaBackupCodes').style.display = 'block';
+        document.getElementById('twofaCodesList').textContent = data.backup_codes.join('\n');
+        alert('2FA enabled! Save your backup codes.');
+        location.reload();
+    } else {
+        alert('Invalid code: ' + (data.error || 'try again'));
+    }
+}
+</script>
+
+{% macro plan_select(selected) %}
+<select name="plan_id" class="form-control">
+    <option value="">None</option>
+    {% for p in plans %}
+    <option value="{{ p.id }}" {% if selected == p.id %}selected{% endif %}>{{ p.name }}</option>
+    {% endfor %}
+</select>
+{% endmacro %}
 
 <div class="modal-overlay" id="planModal">
     <div class="modal">
@@ -188,6 +345,7 @@
                 <select name="role">
                     <option value="user">User</option>
                     <option value="admin">Admin</option>
+                    <option value="reseller">Reseller</option>
                 </select>
             </div>
             <div class="modal-actions">
@@ -197,4 +355,107 @@
         </form>
     </div>
 </div>
+
+<div class="modal-overlay" id="resellerModal">
+    <div class="modal" style="max-width:500px">
+        <h3>Create Reseller</h3>
+        <form method="POST" action="/settings/reseller/create">
+            <div class="form-group">
+                <label>Username</label>
+                <input type="text" name="username" required>
+            </div>
+            <div class="form-group">
+                <label>Password</label>
+                <input type="password" name="password" required>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                <div class="form-group">
+                    <label>Max Clients</label>
+                    <input type="number" name="max_clients" value="5">
+                </div>
+                <div class="form-group">
+                    <label>Max Sites</label>
+                    <input type="number" name="max_sites" value="10">
+                </div>
+                <div class="form-group">
+                    <label>Max Databases</label>
+                    <input type="number" name="max_dbs" value="5">
+                </div>
+                <div class="form-group">
+                    <label>Max Emails</label>
+                    <input type="number" name="max_emails" value="10">
+                </div>
+                <div class="form-group">
+                    <label>Disk Limit (MB)</label>
+                    <input type="number" name="disk_limit_mb" value="1024">
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" onclick="this.closest('.modal-overlay').classList.remove('active')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Create Reseller</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal-overlay" id="clientModal">
+    <div class="modal" style="max-width:450px">
+        <h3>Add Client</h3>
+        <form method="POST" action="/settings/client/create">
+            <div class="form-group">
+                <label>Username</label>
+                <input type="text" name="username" required>
+            </div>
+            <div class="form-group">
+                <label>Password</label>
+                <input type="password" name="password" required>
+            </div>
+            <div class="form-group">
+                <label>Plan</label>
+                <select name="plan_id" class="form-control">
+                    <option value="">No Plan</option>
+                    {% for p in plans %}
+                    <option value="{{ p.id }}">{{ p.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" onclick="this.closest('.modal-overlay').classList.remove('active')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Create Client</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal-overlay" id="tokenModal">
+    <div class="modal" style="max-width:450px">
+        <h3>Create API Token</h3>
+        <form method="POST" action="/settings/token/create">
+            <div class="form-group">
+                <label>Token Name</label>
+                <input type="text" name="name" placeholder="My App" required>
+            </div>
+            <div class="form-group">
+                <label>Permissions</label>
+                <select name="permissions" class="form-control" multiple size="3">
+                    <option value="read" selected>Read</option>
+                    <option value="write">Write</option>
+                    <option value="admin">Admin</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Expires (days, 0=never)</label>
+                <input type="number" name="expires_days" value="365" min="0" class="form-control">
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" onclick="this.closest('.modal-overlay').classList.remove('active')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Create</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<style>
+.modal select[multiple] { height: auto; min-height: 80px; }
+</style>
 {% endblock %}

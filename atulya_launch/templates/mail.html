@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% set active = "mail" %}
+{% block title %}Mail Server - Atulya Launch{% endblock %}
+{% block content %}
+<div class="header">
+    <h2>Mail Server</h2>
+    {% if user.role == 'admin' %}
+    <button class="btn btn-primary" onclick="document.getElementById('setupModal').classList.add('active')">+ Setup Mail Server</button>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h3>Mail Status</h3>
+    <div id="mailStatus">
+        <p class="empty-state">Select a domain to check mail server status.</p>
+    </div>
+</div>
+
+<div class="card">
+    <h3>Email Accounts</h3>
+    <div id="mailAccounts">
+        <p class="empty-state">Set up a mail server to manage email accounts.</p>
+    </div>
+</div>
+
+<div class="modal-overlay" id="setupModal">
+    <div class="modal" style="max-width:500px">
+        <h3>Setup Mail Server</h3>
+        <form method="POST" action="/mail/setup" id="setupForm">
+            <div class="form-group">
+                <label>Domain</label>
+                <select name="domain" class="form-control" required>
+                    {% for d in domains %}
+                    <option value="{{ d }}">{{ d }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <p style="font-size:13px;color:#888">This will install Postfix + Dovecot + OpenDKIM and generate SPF/DKIM/DMARC DNS records. Requires root access on Linux.</p>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" onclick="this.closest('.modal-overlay').classList.remove('active')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Install & Configure</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+document.getElementById('setupForm')?.addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const form = e.target;
+    const data = new FormData(form);
+    const resp = await fetch(form.action, { method: 'POST', body: data });
+    const result = await resp.json();
+    if (result.ok) {
+        alert('Mail server configured! DNS records to add:\n' + JSON.stringify(result.dns_records, null, 2));
+        document.getElementById('setupModal').classList.remove('active');
+        location.reload();
+    } else {
+        alert('Error: ' + (result.error || 'unknown'));
+    }
+});
+</script>
+{% endblock %}

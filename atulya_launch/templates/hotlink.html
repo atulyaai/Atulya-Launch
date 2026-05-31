@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% set active = "hotlink" %}
+{% block title %}Hotlink Protection - Atulya Launch{% endblock %}
+{% block content %}
+
+<div class="header">
+    <h2>Hotlink &amp; Directory IP Access</h2>
+    <button class="btn btn-primary" onclick="document.getElementById('hotlinkModal').classList.add('active')">+ Configure Hotlink</button>
+</div>
+
+<div class="section">
+    <div class="section-header"><h3>Hotlink Protection</h3></div>
+    {% if hotlink_configs %}
+    <table>
+        <thead><tr><th>Domain</th><th>Status</th><th>Extensions</th><th>Allowed Referers</th><th>Actions</th></tr></thead>
+        <tbody>
+        {% for domain, cfg in hotlink_configs.items() %}
+        <tr>
+            <td>{{ domain }}</td>
+            <td>{% if cfg.enabled %}<span class="badge badge-success">Enabled</span>{% else %}<span class="badge badge-danger">Disabled</span>{% endif %}</td>
+            <td><code>{{ cfg.extensions | join(', ') if cfg.extensions else '—' }}</code></td>
+            <td><code>{{ cfg.allow_domains | join(', ') if cfg.allow_domains else '—' }}</code></td>
+            <td>
+                <button class="btn btn-ghost" style="padding:4px 10px;font-size:12px"
+                        onclick="editHotlink('{{ domain }}', {{ 'true' if cfg.enabled else 'false' }}, '{{ cfg.extensions | join(',') }}', '{{ cfg.allow_domains | join(',') }}')">Edit</button>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">No domains configured. Click "+ Configure Hotlink" to get started.</div>
+    {% endif %}
+</div>
+
+<div class="section">
+    <div class="section-header">
+        <h3>Per-Directory IP Access</h3>
+        <button class="btn btn-primary" onclick="document.getElementById('dirModal').classList.add('active')">+ Add Rule</button>
+    </div>
+    {% if dir_rules %}
+    {% for domain, rules in dir_rules.items() %}
+    {% if rules %}
+    <div class="section" style="margin-bottom:12px">
+        <div class="section-header"><h4>{{ domain }}</h4></div>
+        <table>
+            <thead><tr><th>Directory</th><th>Allowed IPs</th><th>Denied IPs</th><th>Actions</th></tr></thead>
+            <tbody>
+            {% for rule in rules %}
+            <tr>
+                <td><code>{{ rule.directory }}</code></td>
+                <td>
+                    {% for ip in rule.allow %}
+                    <span class="pill" style="background:rgba(34,197,94,0.15);color:var(--success)">{{ ip }}</span>
+                    <form method="POST" action="/hotlink/dir/remove" style="display:inline" onsubmit="return confirm('Remove allow {{ ip }}?')">
+                        <input type="hidden" name="domain" value="{{ domain }}">
+                        <input type="hidden" name="directory" value="{{ rule.directory }}">
+                        <input type="hidden" name="ip_address" value="{{ ip }}">
+                        <button class="btn btn-ghost" style="padding:1px 6px;font-size:10px" title="Remove">&#10005;</button>
+                    </form>
+                    {% else %}
+                    <span class="text-dim">—</span>
+                    {% endfor %}
+                </td>
+                <td>
+                    {% for ip in rule.deny %}
+                    <span class="pill" style="background:rgba(239,68,68,0.15);color:var(--danger)">{{ ip }}</span>
+                    <form method="POST" action="/hotlink/dir/remove" style="display:inline" onsubmit="return confirm('Remove deny {{ ip }}?')">
+                        <input type="hidden" name="domain" value="{{ domain }}">
+                        <input type="hidden" name="directory" value="{{ rule.directory }}">
+                        <input type="hidden" name="ip_address" value="{{ ip }}">
+                        <button class="btn btn-ghost" style="padding:1px 6px;font-size:10px" title="Remove">&#10005;</button>
+                    </form>
+                    {% else %}
+                    <span class="text-dim">—</span>
+                    {% endfor %}
+                </td>
+                <td></td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+    {% endfor %}
+    {% else %}
+    <div class="empty-state">No directory IP rules configured.</div>
+    {% endif %}
+</div>
+
+<div class="modal-overlay" id="hotlinkModal">
+    <div class="modal" style="max-width:500px">
+        <h3>Configure Hotlink Protection</h3>
+        <form method="POST" action="/hotlink/set">
+            <div class="form-group">
+                <label>Domain</label>
+                <select name="domain" class="form-control" required>
+                    {% for d in domains %}
+                    <option value="{{ d }}">{{ d }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Enabled</label>
+                <select name="enabled" class="form-control">
+                    <option value="on">On</option>
+                    <option value="off" selected>Off</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>File Extensions (comma-separated)</label>
+                <input type="text" name="extensions" placeholder="jpg,jpeg,png,gif,bmp,webp,svg,ico,css,js,zip,rar,pdf">
+            </div>
+            <div class="form-group">
+                <label>Allowed Referer Domains (comma-separated)</label>
+                <input type="text" name="allow_domains" placeholder="example.com, myothersite.com">
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" onclick="this.closest('.modal-overlay').classList.remove('active')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal-overlay" id="dirModal">
+    <div class="modal" style="max-width:450px">
+        <h3>Add Directory IP Rule</h3>
+        <form method="POST" action="/hotlink/dir/allow">
+            <div class="form-group">
+                <label>Domain</label>
+                <select name="domain" class="form-control" required>
+                    {% for d in domains %}
+                    <option value="{{ d }}">{{ d }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Directory Path</label>
+                <input type="text" name="directory" placeholder="/admin" required>
+            </div>
+            <div class="form-group">
+                <label>IP Address</label>
+                <input type="text" name="ip_address" placeholder="192.168.1.100" required>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" onclick="this.closest('.modal-overlay').classList.remove('active')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Allow</button>
+                <button type="submit" class="btn btn-danger" formaction="/hotlink/dir/deny">Deny</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function editHotlink(domain, enabled, exts, domains) {
+    const modal = document.getElementById('hotlinkModal');
+    modal.classList.add('active');
+    const form = modal.querySelector('form');
+    form.querySelector('[name=domain]').value = domain;
+    form.querySelector('[name=enabled]').value = enabled ? 'on' : 'off';
+    if (exts) form.querySelector('[name=extensions]').value = exts;
+    if (domains) form.querySelector('[name=allow_domains]').value = domains;
+}
+</script>
+{% endblock %}

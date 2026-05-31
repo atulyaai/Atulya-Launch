@@ -1,13 +1,27 @@
+"""Database initialization and connection management for Atulya Launch.
+
+Uses SQLite with WAL mode and provides a context-managed connection,
+schema creation/migration, and an audit log helper.
+"""
+
+import os
 import sqlite3
 import json
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime
 from contextlib import contextmanager
+from typing import Any, Iterator
 
-_db_path: Path = None
-_initialized = False
+_db_path: Path | None = None
+_initialized: bool = False
 
-SCHEMA = """
+SCHEMA_VERSION: int = 4
+
+SCHEMA: str = """
+    CREATE TABLE IF NOT EXISTS schema_version (
+        version INTEGER PRIMARY KEY,
+        applied_at TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE NOT NULL,
@@ -141,33 +155,98 @@ SCHEMA = """
         key TEXT UNIQUE NOT NULL,
         value TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS reseller_clients (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        reseller_id INTEGER NOT NULL,
+        client_id INTEGER NOT NULL UNIQUE,
+        assigned_at TEXT NOT NULL,
+        FOREIGN KEY (reseller_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (client_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS reseller_allocations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        reseller_id INTEGER NOT NULL UNIQUE,
+        max_clients INTEGER DEFAULT 5,
+        max_sites INTEGER DEFAULT 10,
+        max_dbs INTEGER DEFAULT 5,
+        max_emails INTEGER DEFAULT 10,
+        disk_limit_mb INTEGER DEFAULT 1024,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (reseller_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS rate_limit_attempts (
+        key TEXT NOT NULL,
+        attempted_at REAL NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_rate_limit_attempts_key_time
+        ON rate_limit_attempts (key, attempted_at);
+    CREATE TABLE IF NOT EXISTS flash_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_token TEXT NOT NULL,
+        category TEXT NOT NULL DEFAULT 'info',
+        message TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    );
 """
 
 
-def reset_db():
+def reset_db() -> None:
+    """Reset the global database path and initialization flag."""
     global _db_path, _initialized
     _db_path = None
     _initialized = False
 
 
-def init_db(config_dir: Path, force=False):
+def init_db(config_dir: Path, force: bool = False) -> None:
+    """Initialize the SQLite database, creating tables and applying migrations."""
     global _db_path, _initialized
     if _initialized and not force:
         return
     _db_path = config_dir / "panel.db"
-    with connect() as cur:
-        cur.executescript(SCHEMA)
+    try:
+        _init_schema()
+    except sqlite3.OperationalError:
+        import tempfile
+        _db_path = Path(tempfile.gettempdir()) / "atulya-launch" / "panel.db"
+        _db_path.parent.mkdir(parents=True, exist_ok=True)
+        _init_schema()
     _initialized = True
 
 
-@contextmanager
-def connect():
+def _init_schema() -> None:
+    """Create tables and apply lightweight migrations on the selected DB path."""
+    with connect_raw() as conn:
+        conn.executescript(SCHEMA)
+        row: Any = conn.execute("SELECT MAX(version) as v FROM schema_version").fetchone()
+        current_version: int = row["v"] if row and row["v"] else 0
+        if current_version < 3:
+            try:
+                conn.executescript("ALTER TABLE users ADD COLUMN parent_user_id INTEGER REFERENCES users(id);")
+            except Exception:
+                pass
+        if current_version < SCHEMA_VERSION:
+            conn.execute(
+                "INSERT OR REPLACE INTO schema_version (version, applied_at) VALUES (?, ?)",
+                (SCHEMA_VERSION, datetime.utcnow().isoformat() + "Z"),
+            )
+
+
+def connect_raw() -> sqlite3.Connection:
+    """Open a raw SQLite connection with row factory and PRAGMAs set."""
     if _db_path is None:
         raise RuntimeError("Database not initialized. Call init_db() first.")
-    conn = sqlite3.connect(str(_db_path), timeout=10)
+    conn: sqlite3.Connection = sqlite3.connect(str(_db_path), timeout=10)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("PRAGMA busy_timeout=5000")
+    return conn
+
+
+@contextmanager
+def connect() -> Iterator[sqlite3.Connection]:
+    """Context manager that yields a connection and commits on success."""
+    conn: sqlite3.Connection = connect_raw()
     try:
         yield conn
         conn.commit()
@@ -178,11 +257,12 @@ def connect():
         conn.close()
 
 
-def audit_log(user, action, status, details=None):
+def audit_log(user: str, action: str, status: str, details: dict | None = None) -> None:
+    """Write an entry to the audit_log table."""
     if _db_path is None:
         return
     try:
-        conn = sqlite3.connect(str(_db_path), timeout=5)
+        conn: sqlite3.Connection = sqlite3.connect(str(_db_path), timeout=5)
         conn.row_factory = sqlite3.Row
         try:
             conn.execute(

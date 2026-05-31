@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from atulya_launch import utils
-from atulya_launch.web.auth import get_current_user, _hash_password, _verify_password
+from atulya_launch.web.auth import get_current_user, hash_password
 
 router = APIRouter(prefix="/api/users", tags=["users-rbac"])
 
@@ -72,7 +72,7 @@ def create_user(body: PanelUserCreate, user: dict = Depends(get_current_user)):
     data.setdefault("users", {})[user_id] = {
         "id": user_id,
         "username": body.username,
-        "password_hash": _hash_password(body.password),
+        "password_hash": hash_password(body.password),
         "email": body.email or "",
         "role": body.role,
         "permissions": ROLE_PERMISSIONS.get(body.role, []),
@@ -105,7 +105,7 @@ def update_password(user_id: str, body: PasswordUpdate, user: dict = Depends(get
     users = data.get("users", {})
     if user_id not in users:
         raise HTTPException(status_code=404, detail="User not found")
-    users[user_id]["password_hash"] = _hash_password(body.new_password)
+    users[user_id]["password_hash"] = hash_password(body.new_password)
     users[user_id]["updated_at"] = datetime.datetime.now().isoformat()
     _save_users(data)
     return {"status": "password updated", "user_id": user_id}

@@ -1,5 +1,7 @@
 # Atulya Launch
 
+![Atulya Launch Banner](assets/atulya-hero.png)
+
 **Lightweight cPanel alternative — one-click server management with < 50MB RAM idle.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)

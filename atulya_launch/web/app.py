@@ -10,6 +10,7 @@ import secrets
 import hashlib
 import importlib
 import pkgutil
+from urllib.parse import parse_qs
 from pathlib import Path
 from datetime import datetime
 from collections import defaultdict
@@ -23,6 +24,7 @@ from fastapi.templating import Jinja2Templates
 from .. import core
 from .database import init_db
 from .auth import get_current_user, authenticate, create_user, destroy_session
+from .flash import add_flash, request_flashes
 
 
 class RateLimiter:
@@ -106,6 +108,11 @@ def _csrf_exempt(path: str) -> bool:
     )
 
 
+def _production_mode() -> bool:
+    """Return whether production safety checks should be enforced."""
+    return os.environ.get("ATULYA_PRODUCTION", os.environ.get("PANEL_PRODUCTION", "")).lower() in {"1", "true", "yes"}
+
+
 def _register_api_routers(app: FastAPI) -> dict[str, list[str]]:
     """Mount every router from atulya_launch.web.api and report import failures."""
     from . import api
@@ -131,6 +138,14 @@ def _register_api_routers(app: FastAPI) -> dict[str, list[str]]:
     return {"registered": registered, "errors": errors}
 
 
+def _install_template_globals(template_sets: list[Any]) -> None:
+    """Install shared template helpers across route-local Jinja environments."""
+    for template_set in template_sets:
+        template_set.env.globals["panel_version"] = "1.0.0"
+        template_set.env.globals["csrf_token"] = csrf.generate
+        template_set.env.globals["get_flashed_messages"] = request_flashes
+
+
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application with all routes."""
     app: FastAPI = FastAPI(title="Atulya Launch", docs_url="/api/docs", redoc_url=None)
@@ -145,7 +160,11 @@ def create_app() -> FastAPI:
                 row: Any = cur.execute("SELECT COUNT(*) as c FROM users").fetchone()
                 if row["c"] == 0:
                     admin_pass: str = os.environ.get("ADMIN_PASS", "admin")
+                    if _production_mode() and admin_pass == "admin":
+                        raise RuntimeError("ADMIN_PASS must be set to a non-default password in production mode")
                     create_user("admin", admin_pass, skip_policy=True)
+    except RuntimeError:
+        raise
     except Exception:
         pass
 
@@ -159,11 +178,48 @@ def create_app() -> FastAPI:
                 session_token: str | None = request.cookies.get("session_token")
                 if session_token:
                     submitted: str = request.headers.get("X-CSRF-Token", "")
+                    if not submitted and "form" in request.headers.get("content-type", ""):
+                        body = await request.body()
+                        form_values = parse_qs(body.decode("utf-8"), keep_blank_values=True)
+                        submitted = str((form_values.get("_csrf_token") or [""])[0])
+
+                        async def receive() -> dict[str, Any]:
+                            return {"type": "http.request", "body": body, "more_body": False}
+
+                        request._receive = receive  # type: ignore[attr-defined]
                     if not csrf.validate(session_token, submitted):
                         return JSONResponse({"error": "invalid csrf token"}, status_code=403)
         return await call_next(request)
 
     from .routes import dashboard, sites, dns, email as email_mod, databases, ssl as ssl_mod, files, backups, monitoring, firewall, apps, settings, docker, migrations, cron as cron_mod, deploy, logs, security, loadtest, servers, mail as mail_mod, subdomains, redirects as redirect_mod, ipdeny, hotlink
+    _install_template_globals([
+        templates,
+        dashboard.templates,
+        sites.templates,
+        dns.templates,
+        email_mod.templates,
+        databases.templates,
+        ssl_mod.templates,
+        files.templates,
+        backups.templates,
+        monitoring.templates,
+        firewall.templates,
+        apps.templates,
+        settings.templates,
+        docker.templates,
+        migrations.templates,
+        cron_mod.templates,
+        deploy.templates,
+        logs.templates,
+        security.templates,
+        loadtest.templates,
+        servers.templates,
+        mail_mod.templates,
+        subdomains.templates,
+        redirect_mod.templates,
+        ipdeny.templates,
+        hotlink.templates,
+    ])
     app.include_router(dashboard.router)
     app.include_router(sites.router)
     app.include_router(dns.router)
@@ -256,12 +312,14 @@ def create_app() -> FastAPI:
             max_age=86400,
             path="/",
         )
+        add_flash(result["token"], "Signed in successfully.", "success")
         return response
 
     @app.get("/logout")
     async def logout(request: Request) -> RedirectResponse:
         token: str | None = request.cookies.get("session_token")
         if token:
+            add_flash(token, "Signed out successfully.", "info")
             destroy_session(token)
         response: RedirectResponse = RedirectResponse("/login", status_code=302)
         response.delete_cookie("session_token", path="/")
@@ -303,6 +361,7 @@ def create_app() -> FastAPI:
 
     templates.env.globals["panel_version"] = "1.0.0"
     templates.env.globals["csrf_token"] = csrf.generate
+    templates.env.globals["get_flashed_messages"] = request_flashes
 
     api_router_status: dict[str, list[str]] = _register_api_routers(app)
 

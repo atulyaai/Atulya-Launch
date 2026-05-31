@@ -266,38 +266,3 @@ def require_reseller(handler: Callable) -> Callable:
         request.state.user = user
         return await handler(request, *args, **kwargs)
     return wrapper
-
-
-def require_admin(handler):
-    @wraps(handler)
-    async def wrapper(request: Request, *args, **kwargs):
-        user = get_current_user(request)
-        if not user:
-            if request.url.path.startswith("/api/"):
-                return JSONResponse({"error": "unauthorized"}, status_code=401)
-            return RedirectResponse("/login", status_code=302)
-        if user.get("role") != "admin":
-            if request.url.path.startswith("/api/"):
-                return JSONResponse({"error": "forbidden"}, status_code=403)
-            return RedirectResponse("/dashboard", status_code=302)
-        request.state.user = user
-        return await handler(request, *args, **kwargs)
-    return wrapper
-
-
-def require_reseller(handler):
-    """Allow admin or reseller role."""
-    @wraps(handler)
-    async def wrapper(request: Request, *args, **kwargs):
-        user = get_current_user(request)
-        if not user:
-            if request.url.path.startswith("/api/"):
-                return JSONResponse({"error": "unauthorized"}, status_code=401)
-            return RedirectResponse("/login", status_code=302)
-        if user.get("role") not in ("admin", "reseller"):
-            if request.url.path.startswith("/api/"):
-                return JSONResponse({"error": "forbidden"}, status_code=403)
-            return RedirectResponse("/dashboard", status_code=302)
-        request.state.user = user
-        return await handler(request, *args, **kwargs)
-    return wrapper

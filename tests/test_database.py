@@ -45,6 +45,7 @@ class DatabaseTests(unittest.TestCase):
             self.assertIn("databases", names)
             self.assertIn("ssl_certs", names)
             self.assertIn("audit_log", names)
+            self.assertIn("flash_messages", names)
 
     def test_audit_log_inserts(self) -> None:
         audit_log("testuser", "test.action", "ok", {"detail": "value"})

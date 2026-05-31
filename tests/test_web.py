@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 
 class WebAppTests(unittest.TestCase):
@@ -89,6 +90,34 @@ class WebAppTests(unittest.TestCase):
             resp2 = await client.get("/dashboard")
             self.assertEqual(resp2.status_code, 200)
             self.assertIn("Dashboard", resp2.text)
+            self.assertIn("Signed in successfully.", resp2.text)
+        asyncio.run(run())
+
+    def test_cookie_post_requires_csrf(self) -> None:
+        import asyncio
+        app = self._make_app()
+        client = self._get_client(app)
+        async def run():
+            login_resp = await client.post("/login", data={"username": "admin", "password": "admin123"}, follow_redirects=False)
+            self.assertIn("session_token", login_resp.cookies)
+            resp = await client.post("/dns/zone/create", data={"domain": "csrf.example.com"}, follow_redirects=False)
+            self.assertEqual(resp.status_code, 403)
+        asyncio.run(run())
+
+    def test_cookie_post_accepts_csrf_form_token(self) -> None:
+        import asyncio
+        from atulya_launch.web.app import csrf
+        app = self._make_app()
+        client = self._get_client(app)
+        async def run():
+            login_resp = await client.post("/login", data={"username": "admin", "password": "admin123"}, follow_redirects=False)
+            token = login_resp.cookies["session_token"]
+            resp = await client.post(
+                "/dns/zone/create",
+                data={"domain": "csrf-ok.example.com", "_csrf_token": csrf.generate(token)},
+                follow_redirects=False,
+            )
+            self.assertIn(resp.status_code, (302, 307))
         asyncio.run(run())
 
     def test_api_login_valid(self) -> None:
@@ -141,6 +170,21 @@ class WebAppTests(unittest.TestCase):
             resp2 = await client.get("/logout", follow_redirects=False)
             self.assertIn(resp2.status_code, (302, 307))
         asyncio.run(run())
+
+    def test_production_mode_rejects_default_admin_password(self) -> None:
+        from atulya_launch import core
+        from atulya_launch.web.database import reset_db
+        reset_db()
+        core._set_config_dir(self.config_dir)
+        with patch.dict("os.environ", {"ATULYA_PRODUCTION": "1"}, clear=False):
+            from atulya_launch.web.app import create_app
+            with self.assertRaises(RuntimeError):
+                create_app()
+
+    def test_router_status_has_no_import_errors(self) -> None:
+        app = self._make_app()
+        self.assertGreaterEqual(len(getattr(app.state, "api_routers_registered", [])), 1)
+        self.assertEqual(getattr(app.state, "api_router_errors", []), [])
 
 
 if __name__ == "__main__":

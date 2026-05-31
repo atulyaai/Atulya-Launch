@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Atulya Launch</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="login-page" id="loginGate">
+  <div class="login-box">
+    <div class="login-logo">
+      <h1>Atulya Launch</h1>
+      <p>Server Management Dashboard</p>
+    </div>
+    <div id="loginError" class="login-error"></div>
+    <form id="loginForm">
+      <div class="form-group">
+        <label for="username">Username</label>
+        <input type="text" id="username" class="form-control" placeholder="Enter username" required autofocus>
+      </div>
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" class="form-control" placeholder="Enter password" required>
+      </div>
+      <div class="form-group">
+        <label class="form-check">
+          <input type="checkbox" id="remember"> Remember me
+        </label>
+      </div>
+      <button type="submit" class="btn btn-primary btn-block btn-lg" id="loginBtn">Sign In</button>
+    </form>
+  </div>
+</div>
+
+<div class="app hidden" id="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="logo-icon">A</div>
+      <span class="logo-text">Atulya Launch</span>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-section">
+        <div class="nav-section-title">Main</div>
+        <div class="nav-item active" data-section="dashboard"><span class="icon">&#9632;</span> Dashboard</div>
+        <div class="nav-item" data-section="websites"><span class="icon">&#127760;</span> Websites</div>
+        <div class="nav-item" data-section="dns"><span class="icon">&#9879;</span> Domains</div>
+        <div class="nav-item" data-section="email"><span class="icon">&#9993;</span> Email</div>
+        <div class="nav-item" data-section="databases"><span class="icon">&#128451;</span> Databases</div>
+        <div class="nav-item" data-section="files"><span class="icon">&#128193;</span> File Manager</div>
+        <div class="nav-item" data-section="ssl"><span class="icon">&#128274;</span> SSL Certificates</div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-section-title">Advanced</div>
+        <div class="nav-item" data-section="backups"><span class="icon">&#128190;</span> Backups</div>
+        <div class="nav-item" data-section="firewall"><span class="icon">&#128737;</span> Firewall</div>
+        <div class="nav-item" data-section="cron"><span class="icon">&#9200;</span> Cron Jobs</div>
+        <div class="nav-item" data-section="apps"><span class="icon">&#128230;</span> App Installer</div>
+        <div class="nav-item" data-section="monitor"><span class="icon">&#128200;</span> System Monitor</div>
+        <div class="nav-item" data-section="settings"><span class="icon">&#9881;</span> Settings</div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-section-title">Developer</div>
+        <div class="nav-item" data-section="ssh"><span class="icon">&#128273;</span> SSH Keys</div>
+        <div class="nav-item" data-section="gitdeploy"><span class="icon">&#128187;</span> Git Deploy</div>
+        <div class="nav-item" data-section="staging"><span class="icon">&#9879;</span> Staging</div>
+        <div class="nav-item" data-section="php"><span class="icon">&#9733;</span> PHP Manager</div>
+        <div class="nav-item" data-section="docker"><span class="icon">&#128230;</span> Docker</div>
+        <div class="nav-item" data-section="nodeapps"><span class="icon">&#128187;</span> Node.js Apps</div>
+        <div class="nav-item" data-section="pythonapps"><span class="icon">&#128013;</span> Python Apps</div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-section-title">Domain & DNS</div>
+        <div class="nav-item" data-section="subdomains"><span class="icon">&#9879;</span> Subdomains</div>
+        <div class="nav-item" data-section="redirects"><span class="icon">&#8594;</span> Redirects</div>
+        <div class="nav-item" data-section="dkim"><span class="icon">&#128274;</span> DKIM / SPF</div>
+        <div class="nav-item" data-section="errorpages"><span class="icon">&#10060;</span> Error Pages</div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-section-title">Email</div>
+        <div class="nav-item" data-section="webmail"><span class="icon">&#9993;</span> Webmail</div>
+        <div class="nav-item" data-section="autoresponders"><span class="icon">&#128227;</span> Autoresponders</div>
+        <div class="nav-item" data-section="spam"><span class="icon">&#128683;</span> Spam Filter</div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-section-title">Security</div>
+        <div class="nav-item" data-section="twofa"><span class="icon">&#128274;</span> 2FA</div>
+        <div class="nav-item" data-section="apitokens"><span class="icon">&#128273;</span> API Tokens</div>
+        <div class="nav-item" data-section="quotas"><span class="icon">&#128200;</span> Disk Quotas</div>
+        <div class="nav-item" data-section="ftp"><span class="icon">&#128193;</span> FTP Accounts</div>
+        <div class="nav-item" data-section="audit"><span class="icon">&#128209;</span> Audit Log</div>
+        <div class="nav-item" data-section="sessions"><span class="icon">&#128274;</span> Sessions</div>
+        <div class="nav-item" data-section="loginhistory"><span class="icon">&#128209;</span> Login History</div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-section-title">SSL & Security</div>
+        <div class="nav-item" data-section="wildcardssl"><span class="icon">&#128274;</span> Wildcard SSL</div>
+        <div class="nav-item" data-section="csr"><span class="icon">&#128273;</span> CSR Generator</div>
+        <div class="nav-item" data-section="modsecurity"><span class="icon">&#128737;</span> WAF (ModSecurity)</div>
+        <div class="nav-item" data-section="fail2ban"><span class="icon">&#128683;</span> Fail2Ban</div>
+        <div class="nav-item" data-section="portscan"><span class="icon">&#128737;</span> Port Scan</div>
+        <div class="nav-item" data-section="sslautorenew"><span class="icon">&#128260;</span> SSL Auto Renew</div>
+        <div class="nav-item" data-section="ssldetails"><span class="icon">&#128274;</span> SSL Details</div>
+        <div class="nav-item" data-section="letsencryptwildcard"><span class="icon">&#128274;</span> Let's Encrypt WC</div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-section-title">Email Extras</div>
+        <div class="nav-item" data-section="mailinglists"><span class="icon">&#128232;</span> Mailing Lists</div>
+        <div class="nav-item" data-section="emailrouting"><span class="icon">&#8594;</span> Email Routing</div>
+        <div class="nav-item" data-section="emailalerts"><span class="icon">&#128276;</span> Email Alerts</div>
+        <div class="nav-item" data-section="emailforwarding"><span class="icon">&#128229;</span> Email Forwarding</div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-section-title">Databases</div>
+        <div class="nav-item" data-section="phpmyadmin"><span class="icon">&#128451;</span> phpMyAdmin</div>
+        <div class="nav-item" data-section="dbusers"><span class="icon">&#128100;</span> DB Users</div>
+        <div class="nav-item" data-section="remotedb"><span class="icon">&#127760;</span> Remote DB</div>
+        <div class="nav-item" data-section="dbimportexport"><span class="icon">&#8596;</span> DB Import/Export</div>
+        <div class="nav-item" data-section="dbschedulebackup"><span class="icon">&#9200;</span> DB Backup Schedule</div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-section-title">Caching</div>
+        <div class="nav-item" data-section="rediscache"><span class="icon">&#9889;</span> Redis Cache</div>
+        <div class="nav-item" data-section="nginxcache"><span class="icon">&#9889;</span> NGINX Cache</div>
+        <div class="nav-item" data-section="opencache"><span class="icon">&#9889;</span> LiteSpeed</div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-section-title">CDN & DNS</div>
+        <div class="nav-item" data-section="cloudflare"><span class="icon">&#9729;</span> Cloudflare</div>
+        <div class="nav-item" data-section="clouddns"><span class="icon">&#9729;</span> Cloud DNS</div>
+        <div class="nav-item" data-section="dnsimportexport"><span class="icon">&#8596;</span> DNS Import/Export</div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-section-title">Server</div>
+        <div class="nav-item" data-section="servercontrol"><span class="icon">&#9881;</span> Server Controls</div>
+        <div class="nav-item" data-section="timezone"><span class="icon">&#9200;</span> Timezone</div>
+        <div class="nav-item" data-section="ipv6"><span class="icon">&#127760;</span> IPv6</div>
+        <div class="nav-item" data-section="networkstats"><span class="icon">&#128200;</span> Network Stats</div>
+        <div class="nav-item" data-section="vpn"><span class="icon">&#128274;</span> VPN</div>
+        <div class="nav-item" data-section="healthdashboard"><span class="icon">&#9889;</span> Health Dashboard</div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-section-title">Access</div>
+        <div class="nav-item" data-section="ipaccess"><span class="icon">&#128737;</span> IP Access</div>
+        <div class="nav-item" data-section="sshaccess"><span class="icon">&#128273;</span> SSH Access</div>
+        <div class="nav-item" data-section="sftpisolation"><span class="icon">&#128274;</span> SFTP Isolation</div>
+        <div class="nav-item" data-section="sshterminal"><span class="icon">&#128187;</span> SSH Terminal</div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-section-title">DevOps</div>
+        <div class="nav-item" data-section="migration"><span class="icon">&#8596;</span> Migration</div>
+        <div class="nav-item" data-section="plugins"><span class="icon">&#128230;</span> Plugins</div>
+        <div class="nav-item" data-section="cms_installer"><span class="icon">&#128230;</span> CMS Installer</div>
+        <div class="nav-item" data-section="security_advisor"><span class="icon">&#128737;</span> Security Advisor</div>
+        <div class="nav-item" data-section="antivirus"><span class="icon">&#128737;</span> Antivirus</div>
+        <div class="nav-item" data-section="reseller"><span class="icon">&#128101;</span> Reseller Plans</div>
+        <div class="nav-item" data-section="analytics"><span class="icon">&#128200;</span> Analytics</div>
+        <div class="nav-item" data-section="backupencryption"><span class="icon">&#128274;</span> Backup Encryption</div>
+        <div class="nav-item" data-section="cloudbackup"><span class="icon">&#9729;</span> Cloud Backup</div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-section-title">Files & Notifications</div>
+        <div class="nav-item" data-section="filecompress"><span class="icon">&#128230;</span> File Compress</div>
+        <div class="nav-item" data-section="fileshare"><span class="icon">&#128279;</span> File Share</div>
+        <div class="nav-item" data-section="notifications"><span class="icon">&#128276;</span> Notifications</div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-section-title">Settings</div>
+        <div class="nav-item" data-section="passwordpolicy"><span class="icon">&#128274;</span> Password Policy</div>
+        <div class="nav-item" data-section="multiuser"><span class="icon">&#128101;</span> Multi-User</div>
+        <div class="nav-item" data-section="resourcehistory"><span class="icon">&#128200;</span> Resource History</div>
+        <div class="nav-item" data-section="bandwidth"><span class="icon">&#128200;</span> Bandwidth</div>
+        <div class="nav-item" data-section="cronscheduler"><span class="icon">&#9200;</span> Cron Templates</div>
+        <div class="nav-item" data-section="csrf"><span class="icon">&#128274;</span> CSRF Tokens</div>
+        <div class="nav-item" data-section="hotlink"><span class="icon">&#128274;</span> Hotlink Protection</div>
+        <div class="nav-item" data-section="bandwidthlimit"><span class="icon">&#128200;</span> Bandwidth Limit</div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-section-title">External</div>
+        <div class="nav-item" data-section="backups3"><span class="icon">&#9729;</span> S3 Backups</div>
+        <div class="nav-item" data-section="statuspage"><span class="icon">&#9733;</span> Status Page</div>
+      </div>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="nav-item" id="sidebarLogout"><span class="icon">&#9211;</span> Logout</div>
+    </div>
+  </aside>
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+  <div class="main">
+    <header class="header">
+      <div class="header-left">
+        <button class="menu-toggle" id="menuToggle">&#9776;</button>
+        <div class="breadcrumb" id="breadcrumb">
+          <span>Home</span><span class="sep">/</span><span class="current">Dashboard</span>
+        </div>
+      </div>
+      <div class="header-right">
+        <div class="header-info">
+          <div class="info-item"><span class="dot"></span> <span id="serverStatus">Online</span></div>
+          <div class="info-item" id="serverUptime">Uptime: --</div>
+        </div>
+        <button class="notif-btn" id="themeToggle" title="Toggle theme">&#9789;</button>
+        <button class="notif-btn" id="notifBtn">&#128276;<span class="notif-badge hidden" id="notifBadge">0</span></button>
+        <div style="position:relative">
+          <button class="user-btn" id="userBtn">&#128100;</button>
+          <div class="user-menu" id="userMenu">
+            <div class="user-menu-item" id="menuUser"><span>&#128100;</span> <span id="menuUserName">admin</span></div>
+            <div class="user-menu-divider"></div>
+            <div class="user-menu-item danger" id="menuLogout"><span>&#9211;</span> Logout</div>
+          </div>
+        </div>
+      </div>
+    </header>
+    <div class="content" id="content">
+      <div class="spinner"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="modalTitle"></span>
+      <button class="modal-close" id="modalClose">&times;</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-footer" id="modalFooter"></div>
+  </div>
+</div>
+
+<div class="context-menu" id="contextMenu"></div>
+<div class="toast-container" id="toastContainer"></div>
+
+<script src="js/app.js"></script>
+</body>
+</html>

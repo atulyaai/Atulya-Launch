@@ -1,0 +1,38 @@
+; Atulya-Launch DNS Zone Template
+; Variables: {{domain}}, {{admin_email}}, {{serial}}, {{refresh}}, {{retry}}, {{expire}}, {{ttl}}, {{a_record}}, {{mx_host}}
+
+$TTL {{ttl}}
+@       IN      SOA     ns1.{{domain}}. {{admin_email}}. (
+                        {{serial}}       ; Serial (YYYYMMDDNN)
+                        {{refresh}}      ; Refresh (1 day)
+                        {{retry}}        ; Retry (1 hour)
+                        {{expire}}       ; Expire (1 week)
+                        {{ttl}}         ; Minimum TTL (1 hour)
+                        )
+
+; Name servers
+@       IN      NS      ns1.{{domain}}.
+@       IN      NS      ns2.{{domain}}.
+
+; A Records
+ns1     IN      A       {{a_record}}
+ns2     IN      A       {{a_record}}
+@       IN      A       {{a_record}}
+www     IN      A       {{a_record}}
+mail    IN      A       {{a_record}}
+ftp     IN      A       {{a_record}}
+
+; MX Record
+@       IN      MX      10  mail.{{domain}}.
+
+; CNAME Records
+@       IN      CNAME   {{a_record}}.
+smtp    IN      CNAME   mail.{{domain}}.
+imap    IN      CNAME   mail.{{domain}}.
+pop     IN      CNAME   mail.{{domain}}.
+
+; TXT Records (SPF)
+@       IN      TXT     "v=spf1 mx a ip4:{{a_record}} ~all"
+
+; AAAA Record (placeholder — replace with actual IPv6)
+; @      IN      AAAA    {{ipv6_record}}

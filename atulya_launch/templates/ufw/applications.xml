@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<applications>
+  <!-- Atulya-Launch Control Panel -->
+  <application>
+    <name>Atulya Panel</name>
+    <short>Atulya Panel</short>
+    <description>Atulya-Launch web control panel (HTTPS)</description>
+    <ports>
+      <port protocol="tcp">8443</port>
+    </ports>
+  </application>
+
+  <!-- Web Server -->
+  <application>
+    <name>Nginx Full</name>
+    <short>Nginx Full</short>
+    <description>Nginx HTTP and HTTPS web server</description>
+    <ports>
+      <port protocol="tcp">80</port>
+      <port protocol="tcp">443</port>
+    </ports>
+  </application>
+
+  <application>
+    <name>Nginx HTTP</name>
+    <short>Nginx HTTP</short>
+    <description>Nginx HTTP web server</description>
+    <ports>
+      <port protocol="tcp">80</port>
+    </ports>
+  </application>
+
+  <application>
+    <name>Nginx HTTPS</name>
+    <short>Nginx HTTPS</short>
+    <description>Nginx HTTPS web server</description>
+    <ports>
+      <port protocol="tcp">443</port>
+    </ports>
+  </application>
+
+  <!-- Email Services -->
+  <application>
+    <name>Email Full</name>
+    <short>Email Full</short>
+    <description>Full email services (SMTP, IMAP, POP3)</description>
+    <ports>
+      <port protocol="tcp">25</port>
+      <port protocol="tcp">143</port>
+      <port protocol="tcp">465</port>
+      <port protocol="tcp">587</port>
+      <port protocol="tcp">993</port>
+      <port protocol="tcp">110</port>
+      <port protocol="tcp">995</port>
+    </ports>
+  </application>
+
+  <application>
+    <name>SMTP</name>
+    <short>SMTP</short>
+    <description>SMTP mail server</description>
+    <ports>
+      <port protocol="tcp">25</port>
+      <port protocol="tcp">465</port>
+      <port protocol="tcp">587</port>
+    </ports>
+  </application>
+
+  <application>
+    <name>IMAP</name>
+    <short>IMAP</short>
+    <description>IMAP mail access</description>
+    <ports>
+      <port protocol="tcp">143</port>
+      <port protocol="tcp">993</port>
+    </ports>
+  </application>
+
+  <application>
+    <name>POP3</name>
+    <short>POP3</short>
+    <description>POP3 mail access</description>
+    <ports>
+      <port protocol="tcp">110</port>
+      <port protocol="tcp">995</port>
+    </ports>
+  </application>
+
+  <!-- DNS -->
+  <application>
+    <name>DNS</name>
+    <short>DNS</short>
+    <description>DNS server (BIND9)</description>
+    <ports>
+      <port protocol="tcp">53</port>
+      <port protocol="udp">53</port>
+    </ports>
+  </application>
+
+  <!-- SSH -->
+  <application>
+    <name>OpenSSH</name>
+    <short>SSH</short>
+    <description>SSH remote access</description>
+    <ports>
+      <port protocol="tcp">22</port>
+    </ports>
+  </application>
+</applications>

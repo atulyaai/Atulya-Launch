@@ -1,0 +1,59 @@
+[Unit]
+Description=Atulya-Launch Control Panel
+Documentation=https://github.com/atulyaai/Atulya-Launch
+After=network.target nginx.service mariadb.service postgresql.service
+Wants=nginx.service
+StartLimitBurst=3
+StartLimitIntervalSec=60
+
+[Service]
+Type=simple
+User=atulya-launch
+Group=atulya-launch
+WorkingDirectory=/var/lib/atulya-launch
+ExecStart=/usr/bin/python3 -m atulya_launch --web --port 8443
+Restart=on-failure
+RestartSec=5
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/atulya-launch /var/log/atulya-launch /etc/atulya-launch
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectKernelLogs=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+
+# Resource limits (enforce < 50MB RAM)
+MemoryMax=64M
+MemoryHigh=48M
+CPUQuota=10%
+TasksMax=64
+
+# File system limits
+LimitNOFILE=1024
+LimitNPROC=512
+
+# Environment variables
+Environment=ATULYA_CONFIG_DIR=/etc/atulya-launch
+Environment=ATULYA_DATA_DIR=/var/lib/atulya-launch
+Environment=ATULYA_LOG_DIR=/var/log/atulya-launch
+Environment=ATULYA_HOST=0.0.0.0
+Environment=ATULYA_PORT=8443
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=atulya-launch
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,38 @@
+// Atulya-Launch BIND9 Local Configuration
+// This file is managed by Atulya-Launch
+
+options {
+    directory "/var/cache/bind";
+
+    // Recursion settings
+    recursion yes;
+    allow-recursion { any; };
+    allow-query { any; };
+
+    // Forwarding (optional — uncomment to use upstream DNS)
+    // forwarders {
+    //     8.8.8.8;
+    //     8.8.4.4;
+    //     1.1.1.1;
+    // };
+    // forward only;
+
+    // DNSSEC
+    dnssec-validation auto;
+
+    // Listen on all interfaces
+    listen-on { any; };
+    listen-on-v6 { any; };
+
+    // Disable zone transfer for security
+    allow-transfer { none; };
+
+    // Version information hidden
+    version "not available";
+
+    // Query log (enable for debugging)
+    // querylog yes;
+};
+
+// Include managed zones
+include "/etc/bind/zones/*.zone";

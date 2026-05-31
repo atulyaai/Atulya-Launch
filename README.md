@@ -15,27 +15,19 @@
 
 ## At a Glance
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    ATULYA LAUNCH DASHBOARD                       │
-├─────────┬─────────┬─────────┬─────────┬─────────┬──────────────┤
-│  CPU    │  Memory │  Disk   │  Sites  │  Emails │  SSL Certs   │
-│  23%    │  48%    │  31%    │  12     │  45     │  8           │
-├─────────┴─────────┴─────────┴─────────┴─────────┴──────────────┤
-│  Health Score: 92/100  [████████████████████░░] Grade: A        │
-├─────────────────────────────────────────────────────────────────┤
-│  CPU History (24h)                                              │
-│  100%|                                                         │
-│   75%|      ╷                                                  │
-│   50%|  ╷╷  │╷                                                 │
-│   25%|╷╷│╷╷││╷╷╷                                              │
-│    0%└──────────────────────────────────────────────────────    │
-│   00:00  06:00  12:00  18:00  24:00                            │
-├─────────────────────────────────────────────────────────────────┤
-│  Services:  nginx ✓  mariadb ✓  redis ✓  postfix ✓  fail2ban ✓│
-│  Uptime: 45d 12h 33m  |  Processes: 142  |  Load: 0.42 0.38   │
-└─────────────────────────────────────────────────────────────────┘
-```
+| Metric | Value | Status |
+|--------|-------|--------|
+| **CPU Usage** | 23% | 🟢 Normal |
+| **Memory Usage** | 48% | 🟡 Moderate |
+| **Disk Usage** | 31% | 🟢 Normal |
+| **Websites** | 12 | 🟢 Active |
+| **Email Accounts** | 45 | 🟢 Active |
+| **SSL Certificates** | 8 | 🟢 Valid |
+| **Health Score** | 92/100 | 🟢 Grade A |
+| **Uptime** | 45d 12h 33m | 🟢 Stable |
+| **Processes** | 142 | 🟢 Normal |
+| **Load Average** | 0.42, 0.38, 0.31 | 🟢 Healthy |
+| **Services** | nginx, mariadb, redis, postfix, fail2ban | ✅ All Running |
 
 ---
 

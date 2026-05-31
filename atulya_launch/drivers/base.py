@@ -70,12 +70,28 @@ class DnsDriver(Protocol):
     def apply_zone(self, zone: BindZone) -> ApplyResult:
         """Write a zone and reload the DNS backend."""
 
+    def delete_zone(self, domain: str) -> ApplyResult:
+        """Remove a zone and reload the DNS backend."""
+
 
 class MailDriver(Protocol):
     """Mail backend abstraction."""
 
     def apply_domain(self, domain: str, mailboxes: list[dict[str, str | int]]) -> ApplyResult:
         """Write virtual mailbox data and reload mail services."""
+
+
+class PhpFpmDriver(Protocol):
+    """PHP-FPM backend abstraction."""
+
+    def install_pool(self, domain: str, version: str) -> ApplyResult:
+        """Write a PHP-FPM pool config for a domain."""
+
+    def remove_pool(self, domain: str, version: str) -> ApplyResult:
+        """Remove a PHP-FPM pool config for a domain."""
+
+    def reload(self, version: str) -> ApplyResult:
+        """Restart the PHP-FPM service for a specific version."""
 
 
 class PlatformDriver(Protocol):
@@ -88,3 +104,5 @@ class PlatformDriver(Protocol):
     web: WebServerDriver
     dns: DnsDriver
     mail: MailDriver
+    php_fpm: PhpFpmDriver
+    php_fpm: PhpFpmDriver

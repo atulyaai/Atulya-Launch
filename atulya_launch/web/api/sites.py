@@ -1,11 +1,12 @@
 """Site management API."""
 
+import os
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from atulya_launch import core, utils
 from atulya_launch.web.auth import get_current_user
+from atulya_launch.web import sites_service
 
 router = APIRouter(prefix="/api/sites", tags=["sites"])
 
@@ -13,31 +14,34 @@ router = APIRouter(prefix="/api/sites", tags=["sites"])
 class SiteCreate(BaseModel):
     domain: str
     web_root: Optional[str] = None
-    server_type: Optional[str] = None
-    php_enabled: bool = False
-    extra_config: Optional[dict] = None
+    proxy_pass: Optional[str] = None
+    php: bool = False
+    php_version: Optional[str] = None
 
 
 @router.get("")
 def list_sites(user: dict = Depends(get_current_user)):
-    return {"sites": core.site_list()}
+    return {"sites": sites_service.list_sites()}
 
 
 @router.post("")
 def create_site(body: SiteCreate, user: dict = Depends(get_current_user)):
-    data = core.site_create(
-        domain_name=body.domain,
-        web_root=body.web_root,
-        server_type=body.server_type,
-        php_enabled=body.php_enabled,
-        extra_config=body.extra_config,
-    )
+    try:
+        data = sites_service.create_site(
+            domain=body.domain,
+            web_root=body.web_root,
+            proxy_pass=body.proxy_pass,
+            php=body.php,
+            php_version=body.php_version,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return {"site": data}
 
 
 @router.delete("/{domain}")
 def delete_site(domain: str, user: dict = Depends(get_current_user)):
-    ok = core.site_delete(domain)
+    ok = sites_service.delete_site(domain)
     if not ok:
         raise HTTPException(status_code=404, detail="Site not found")
     return {"status": "deleted", "domain": domain}
@@ -45,33 +49,30 @@ def delete_site(domain: str, user: dict = Depends(get_current_user)):
 
 @router.put("/{domain}/enable")
 def enable_site(domain: str, user: dict = Depends(get_current_user)):
-    ok = core.site_toggle(domain, enable=True)
-    if not ok:
+    try:
+        sites_service.toggle_site(domain, True)
+    except ValueError:
         raise HTTPException(status_code=404, detail="Site not found")
     return {"status": "enabled", "domain": domain}
 
 
 @router.put("/{domain}/disable")
 def disable_site(domain: str, user: dict = Depends(get_current_user)):
-    ok = core.site_toggle(domain, enable=False)
-    if not ok:
+    try:
+        sites_service.toggle_site(domain, False)
+    except ValueError:
         raise HTTPException(status_code=404, detail="Site not found")
     return {"status": "disabled", "domain": domain}
 
 
 @router.get("/{domain}/config")
 def get_site_config(domain: str, user: dict = Depends(get_current_user)):
-    sites = core.site_list()
-    if domain not in sites:
+    site = sites_service.get_site(domain)
+    if not site:
         raise HTTPException(status_code=404, detail="Site not found")
-    site = sites[domain]
-    server_type = site.get("server_type", "nginx")
-    from atulya_launch.core import _generate_server_config
-    config_content = _generate_server_config(
-        domain,
-        site.get("web_root", f"/var/www/{domain}/public"),
-        server_type,
-        site.get("php_enabled", False),
-        site.get("extra_config"),
-    )
-    return {"domain": domain, "server_type": server_type, "config": config_content}
+    vhost_path = f"/etc/nginx/sites-available/{domain}.conf"
+    config_content = ""
+    if os.path.exists(vhost_path):
+        with open(vhost_path) as f:
+            config_content = f.read()
+    return {"domain": domain, "config": config_content}

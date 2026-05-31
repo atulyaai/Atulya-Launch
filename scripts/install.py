@@ -1,160 +1,260 @@
 #!/usr/bin/env python3
-"""
-Cross-platform Atulya Launch bootstrapper.
+"""Atulya Launch - Cross-Platform Installer
 
-This script is intentionally stdlib-only so it can be run directly from curl,
-PowerShell, or a local checkout.
+Detects OS and installs all required services:
+- Ubuntu/Debian: apt, nginx, mysql, php-fpm, certbot, ufw, fail2ban
+- CentOS/RHEL/Rocky: dnf/yum, nginx, mariadb, php-fpm, certbot, firewalld
+- Arch Linux: pacman, nginx, mariadb, php-fpm, certbot, iptables-nft
+- macOS: brew, caddy, mariadb, php, certbot
+- Windows: choco/winget, caddy, mysql, php
+
+Usage:
+  Linux/macOS: sudo python3 install.py
+  Windows: python install.py (as Administrator)
+  Dry run: python3 install.py --dry-run --local
 """
 
-import argparse
 import os
+import sys
+import subprocess
 import platform
 import shutil
-import subprocess
-import sys
+import secrets
+import string
 from pathlib import Path
 
+DRY_RUN = "--dry-run" in sys.argv
+LOCAL_MODE = "--local" in sys.argv
 
-REPO_URL = "https://github.com/atulyaai/Atulya-Launch/archive/refs/heads/main.zip"
+PANEL_HOST = os.environ.get("PANEL_HOST", "127.0.0.1")
+PANEL_PORT = os.environ.get("PANEL_PORT", "8080")
+ADMIN_USER = os.environ.get("ADMIN_USER", "admin")
+ADMIN_PASS = os.environ.get("ADMIN_PASS", "")
+SKIP_DOCKER = os.environ.get("SKIP_DOCKER", "0") == "1"
 
+def log(msg):
+    print(f"\033[1;32m[Atulya]\033[0m {msg}")
 
-def run(command, *, check=True):
-    print("+ " + " ".join(str(part) for part in command))
-    return subprocess.run(command, check=check)
+def warn(msg):
+    print(f"\033[1;33m[Warning]\033[0m {msg}")
 
+def err(msg):
+    print(f"\033[1;31m[Error]\033[0m {msg}", file=sys.stderr)
+    sys.exit(1)
 
-def default_prefix():
+def run(cmd, check=False, shell=False):
+    if DRY_RUN:
+        log(f"[dry-run] Would run: {cmd if isinstance(cmd, str) else ' '.join(cmd)}")
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+    log(f"Running: {cmd if isinstance(cmd, str) else ' '.join(cmd)}")
+    result = subprocess.run(cmd, capture_output=True, text=True, check=check, shell=shell)
+    if result.returncode != 0 and check:
+        err(f"Command failed: {result.stderr}")
+    return result
+
+def generate_password(length=24):
+    alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
+    return ''.join(secrets.choice(alphabet) for _ in range(length))
+
+def detect_os():
     system = platform.system().lower()
-    if system == "windows":
-        base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
-        return Path(base) / "Atulya" / "Launch"
-    if system == "darwin":
-        return Path.home() / "Library" / "Application Support" / "Atulya" / "Launch"
-    return Path.home() / ".atulya-launch"
+    if system == "linux":
+        try:
+            with open("/etc/os-release") as f:
+                info = f.read().lower()
+            if "ubuntu" in info or "debian" in info:
+                return "debian"
+            elif "centos" in info or "rhel" in info or "rocky" in info or "almalinux" in info:
+                return "rhel"
+            elif "fedora" in info:
+                return "fedora"
+            elif "arch" in info or "manjaro" in info:
+                return "arch"
+        except FileNotFoundError:
+            pass
+        return "linux_unknown"
+    elif system == "darwin":
+        return "macos"
+    elif system == "windows":
+        return "windows"
+    return "unknown"
 
+def detect_package_manager(os_type):
+    if os_type == "debian":
+        return "apt"
+    elif os_type in ("rhel", "fedora"):
+        if shutil.which("dnf"):
+            return "dnf"
+        return "yum"
+    elif os_type == "arch":
+        return "pacman"
+    elif os_type == "macos":
+        return "brew"
+    elif os_type == "windows":
+        if shutil.which("choco"):
+            return "choco"
+        if shutil.which("winget"):
+            return "winget"
+    return None
 
-def venv_python(venv_dir):
-    if platform.system().lower() == "windows":
-        return venv_dir / "Scripts" / "python.exe"
-    return venv_dir / "bin" / "python"
+def install_package(pkg_name, pkg_mgr=None):
+    if pkg_mgr is None:
+        pkg_mgr = detect_package_manager(detect_os())
+    if pkg_mgr == "apt":
+        run(["apt-get", "install", "-y", pkg_name])
+    elif pkg_mgr == "dnf":
+        run(["dnf", "install", "-y", pkg_name])
+    elif pkg_mgr == "yum":
+        run(["yum", "install", "-y", pkg_name])
+    elif pkg_mgr == "pacman":
+        run(["pacman", "-S", "--noconfirm", pkg_name])
+    elif pkg_mgr == "brew":
+        run(["brew", "install", pkg_name])
+    elif pkg_mgr == "choco":
+        run(["choco", "install", pkg_name, "-y"])
 
+def install_prerequisites(os_type):
+    log("Installing prerequisites...")
+    pkg_mgr = detect_package_manager(os_type)
+    if pkg_mgr == "apt":
+        run(["apt-get", "update", "-qq"])
+        run(["apt-get", "install", "-y", "curl", "git", "python3", "python3-pip", "python3-venv", "sqlite3", "certbot", "ufw", "fail2ban"])
+    elif pkg_mgr in ("dnf", "yum"):
+        run([pkg_mgr, "install", "-y", "curl", "git", "python3", "python3-pip", "sqlite", "certbot", "firewalld"])
+    elif pkg_mgr == "pacman":
+        run(["pacman", "-S", "--noconfirm", "curl", "git", "python", "python-pip", "sqlite", "certbot"])
+    elif pkg_mgr == "brew":
+        run(["brew", "install", "curl", "git", "python3", "sqlite", "certbot"])
+    elif pkg_mgr == "choco":
+        run(["choco", "install", "git", "python3", "sqlite", "-y"])
 
-def venv_executable(venv_dir, name):
-    if platform.system().lower() == "windows":
-        return venv_dir / "Scripts" / f"{name}.exe"
-    return venv_dir / "bin" / name
+def install_services(os_type):
+    log("Installing services (Nginx, MySQL, PHP)...")
+    pkg_mgr = detect_package_manager(os_type)
+    if pkg_mgr == "apt":
+        run(["apt-get", "install", "-y", "nginx", "mysql-server", "php-fpm", "php-mysql", "php-xml", "php-mbstring"])
+    elif pkg_mgr in ("dnf", "yum"):
+        run([pkg_mgr, "install", "-y", "nginx", "mariadb-server", "php-fpm", "php-mysqlnd", "php-xml", "php-mbstring"])
+    elif pkg_mgr == "pacman":
+        run(["pacman", "-S", "--noconfirm", "nginx", "mariadb", "php-fpm", "php-gd"])
+    elif pkg_mgr == "brew":
+        run(["brew", "install", "nginx", "mariadb", "php"])
+    elif pkg_mgr == "choco":
+        run(["choco", "install", "nginx", "mysql", "php", "-y"])
 
+def install_docker(os_type):
+    if SKIP_DOCKER:
+        return
+    log("Installing Docker...")
+    pkg_mgr = detect_package_manager(os_type)
+    if pkg_mgr == "apt":
+        run(["curl", "-fsSL", "https://get.docker.com", "-o", "/tmp/get-docker.sh"])
+        run(["sh", "/tmp/get-docker.sh"])
+    elif pkg_mgr in ("dnf", "yum"):
+        run(["curl", "-fsSL", "https://get.docker.com", "-o", "/tmp/get-docker.sh"])
+        run(["sh", "/tmp/get-docker.sh"])
+    elif pkg_mgr == "brew":
+        run(["brew", "install", "--cask", "docker"])
 
-def detect_source(args):
-    cwd = Path.cwd()
-    if args.local:
-        return str(cwd)
-    if (cwd / "pyproject.toml").exists() and (cwd / "atulya_launch").exists():
-        return str(cwd)
-    extra = "[all]" if args.all else ""
-    return f"atulya-launch{extra} @ {args.repo}"
-
-
-def write_launchers(prefix, venv_dir, panel_home, host, port):
-    bin_dir = prefix / "bin"
-    bin_dir.mkdir(parents=True, exist_ok=True)
-    python = venv_python(venv_dir)
-
-    if platform.system().lower() == "windows":
-        cli = bin_dir / "atulya-launch.cmd"
-        cli.write_text(
-            f"@echo off\r\nset ATULYA_HOME={panel_home}\r\n\"{python}\" -m atulya_launch %*\r\n",
-            encoding="utf-8",
-        )
-        server = bin_dir / "atulya-launch-serve.cmd"
-        server.write_text(
-            f"@echo off\r\nset ATULYA_HOME={panel_home}\r\n\"{python}\" -m atulya_launch serve --host {host} --port {port}\r\n",
-            encoding="utf-8",
-        )
+def setup_panel():
+    global ADMIN_PASS
+    log("Setting up Atulya Launch panel...")
+    panel_dir = Path("/opt/atulya-launch") if sys.platform != "win32" else Path(os.environ.get("PROGRAMDATA", "C:/ProgramData")) / "Atulya" / "Launch"
+    if DRY_RUN:
+        log(f"[dry-run] Would create panel directory: {panel_dir}")
     else:
-        cli = bin_dir / "atulya-launch"
-        cli.write_text(
-            f"#!/usr/bin/env sh\nexport ATULYA_HOME=\"{panel_home}\"\nexec \"{python}\" -m atulya_launch \"$@\"\n",
-            encoding="utf-8",
-        )
-        cli.chmod(0o755)
-        server = bin_dir / "atulya-launch-serve"
-        server.write_text(
-            f"#!/usr/bin/env sh\nexport ATULYA_HOME=\"{panel_home}\"\nexec \"{python}\" -m atulya_launch serve --host {host} --port {port}\n",
-            encoding="utf-8",
-        )
-        server.chmod(0o755)
-
-    return bin_dir
-
-
-def main(argv=None):
-    parser = argparse.ArgumentParser(description="Install Atulya Launch on Linux, macOS, or Windows.")
-    parser.add_argument("--prefix", type=Path, default=default_prefix(), help="Install directory")
-    parser.add_argument("--home", type=Path, default=None, help="ATULYA_HOME data directory")
-    parser.add_argument("--repo", default=REPO_URL, help="Package URL to install from")
-    parser.add_argument("--local", action="store_true", help="Install from the current checkout")
-    parser.add_argument("--all", action="store_true", help="Install package with [all] extras")
-    parser.add_argument("--admin", default="admin", help="Initial admin username")
-    parser.add_argument("--password", default=None, help="Initial admin password; generated if omitted")
-    parser.add_argument("--host", default="127.0.0.1", help="Dashboard bind host for generated launcher")
-    parser.add_argument("--port", default="8080", help="Dashboard bind port for generated launcher")
-    parser.add_argument("--no-init", action="store_true", help="Install only; do not initialize config")
-    parser.add_argument("--dry-run", action="store_true", help="Print planned actions without changing files")
-    args = parser.parse_args(argv)
-
-    prefix = args.prefix.expanduser().resolve()
-    panel_home = (args.home or (prefix / "data")).expanduser().resolve()
-    venv_dir = prefix / "venv"
-    source = detect_source(args)
-
-    print(f"Atulya Launch installer")
-    print(f"Platform: {platform.system()} {platform.release()}")
-    print(f"Install:  {prefix}")
-    print(f"Data:     {panel_home}")
-    print(f"Source:   {source}")
-
-    if args.dry_run:
-        print("Dry run complete.")
-        return 0
-
-    prefix.mkdir(parents=True, exist_ok=True)
-    panel_home.mkdir(parents=True, exist_ok=True)
-
-    if not venv_python(venv_dir).exists():
-        run([sys.executable, "-m", "venv", str(venv_dir)])
-
-    python = venv_python(venv_dir)
-    run([str(python), "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel"])
-    run([str(python), "-m", "pip", "install", "--upgrade", source])
-
-    env = os.environ.copy()
-    env["ATULYA_HOME"] = str(panel_home)
-    if not args.no_init:
-        command = [str(python), "-m", "atulya_launch", "init", "--admin", args.admin, "--rotate-token"]
-        if args.password:
-            command.extend(["--password", args.password])
-        print("+ " + " ".join(command))
-        subprocess.run(command, check=True, env=env)
-
-    bin_dir = write_launchers(prefix, venv_dir, panel_home, args.host, args.port)
-    cli = venv_executable(venv_dir, "atulya-launch")
-
-    print("")
-    print("Atulya Launch installed.")
-    print(f"CLI:       {cli}")
-    print(f"Launchers: {bin_dir}")
-    print(f"Data:      {panel_home}")
-    print("")
-    print("Try:")
-    if platform.system().lower() == "windows":
-        print(f"  {bin_dir}\\atulya-launch.cmd system")
-        print(f"  {bin_dir}\\atulya-launch-serve.cmd")
+        panel_dir.mkdir(parents=True, exist_ok=True)
+    if not ADMIN_PASS:
+        ADMIN_PASS = generate_password()
+        log(f"Generated admin password: {ADMIN_PASS}")
+    env_file = panel_dir / ".env"
+    env_content = f"""PANEL_HOST={PANEL_HOST}
+PANEL_PORT={PANEL_PORT}
+ADMIN_USER={ADMIN_USER}
+ADMIN_PASS={ADMIN_PASS}
+ATULYA_PRODUCTION=1
+"""
+    if DRY_RUN:
+        log(f"[dry-run] Would write environment file to {env_file}")
     else:
-        print(f"  {bin_dir}/atulya-launch system")
-        print(f"  {bin_dir}/atulya-launch-serve")
-    return 0
+        env_file.write_text(env_content)
+    log(f"Environment file written to {env_file}")
 
+def setup_systemd():
+    if sys.platform == "win32":
+        log("[skip] systemd not available on Windows")
+        return
+    log("Setting up systemd service...")
+    service_content = f"""[Unit]
+Description=Atulya Launch Hosting Panel
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/atulya-launch
+ExecStart={sys.executable} -m atulya_launch serve --host {PANEL_HOST} --port {PANEL_PORT}
+Restart=always
+RestartSec=5
+Environment=ATULYA_PRODUCTION=1
+
+[Install]
+WantedBy=multi-user.target
+"""
+    service_path = Path("/etc/systemd/system/atulya-launch.service")
+    if DRY_RUN:
+        log(f"[dry-run] Would write systemd service to {service_path}")
+    else:
+        service_path.parent.mkdir(parents=True, exist_ok=True)
+        service_path.write_text(service_content)
+        run(["systemctl", "daemon-reload"])
+        run(["systemctl", "enable", "atulya-launch"])
+        run(["systemctl", "start", "atulya-launch"])
+
+def setup_firewall(os_type):
+    if sys.platform == "win32":
+        log("[skip] Use Windows Firewall for port configuration")
+        return
+    log("Configuring firewall...")
+    pkg_mgr = detect_package_manager(os_type)
+    if pkg_mgr == "apt":
+        run(["ufw", "allow", "22/tcp"])
+        run(["ufw", "allow", "80/tcp"])
+        run(["ufw", "allow", "443/tcp"])
+        run(["ufw", "allow", PANEL_PORT + "/tcp"])
+        run(["ufw", "--force", "enable"])
+    elif pkg_mgr in ("dnf", "yum"):
+        run(["firewall-cmd", "--permanent", "--add-port=22/tcp"])
+        run(["firewall-cmd", "--permanent", "--add-port=80/tcp"])
+        run(["firewall-cmd", "--permanent", "--add-port=443/tcp"])
+        run(["firewall-cmd", "--permanent", f"--add-port={PANEL_PORT}/tcp"])
+        run(["firewall-cmd", "--reload"])
+
+def main():
+    os_type = detect_os()
+    log(f"Detected OS: {os_type} ({platform.platform()})")
+    if os_type == "unknown":
+        err("Unsupported operating system")
+    install_prerequisites(os_type)
+    install_services(os_type)
+    install_docker(os_type)
+    setup_panel()
+    setup_systemd()
+    setup_firewall(os_type)
+    if DRY_RUN:
+        log("=" * 60)
+        log("Dry run complete.")
+        log(f"Would install panel at: http://{PANEL_HOST}:{PANEL_PORT}")
+        log(f"Would use admin password: {ADMIN_PASS}")
+        log("=" * 60)
+    else:
+        log("=" * 60)
+        log("Installation complete!")
+        log(f"Panel URL: http://{PANEL_HOST}:{PANEL_PORT}")
+        log(f"Admin user: {ADMIN_USER}")
+        log(f"Admin password: {ADMIN_PASS}")
+        log("=" * 60)
+        log("Start the panel: systemctl start atulya-launch")
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

@@ -1,16 +1,16 @@
 """Email routing and catch-all management API."""
 
 import datetime
+from pathlib import Path
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from atulya_launch import utils
 from atulya_launch.web.auth import get_current_user
+from atulya_launch.web.database import connect
 
 router = APIRouter(prefix="/api/email", tags=["email-routing"])
-
-EMAIL_ROUTING_FILE = utils.CONFIG_DIR / "email_routing.json"
 
 
 class RoutingConfig(BaseModel):
@@ -24,23 +24,6 @@ class RoutingConfig(BaseModel):
 class CatchAllConfig(BaseModel):
     address: str
     enabled: bool = True
-
-
-def _load_routing() -> dict:
-    if EMAIL_ROUTING_FILE.exists():
-        import json
-        return json.loads(EMAIL_ROUTING_FILE.read_text())
-    return {"domains": {}}
-
-
-def _save_routing(data: dict):
-    EMAIL_ROUTING_FILE.parent.mkdir(parents=True, exist_ok=True)
-    import json
-    EMAIL_ROUTING_FILE.write_text(json.dumps(data, indent=2))
-
-
-def _postfix_virtual_map_path(domain: str) -> str:
-    return f"/etc/postfix/virtual_{domain}"
 
 
 def _generate_postfix_relay(domain: str, config: RoutingConfig) -> str:
@@ -59,9 +42,15 @@ def _generate_postfix_relay(domain: str, config: RoutingConfig) -> str:
 
 @router.get("/routing/{domain}")
 def get_routing(domain: str, user: dict = Depends(get_current_user)):
-    data = _load_routing()
-    domain_data = data.get("domains", {}).get(domain, {})
-    routing = domain_data.get("routing", {"mode": "local"})
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT mode, relay_host, relay_port, relay_username, updated_at FROM email_routing WHERE domain = ?",
+            (domain,),
+        ).fetchone()
+    if row:
+        routing = dict(row)
+    else:
+        routing = {"mode": "local"}
     return {"domain": domain, "routing": routing}
 
 
@@ -71,15 +60,13 @@ def set_routing(domain: str, body: RoutingConfig, user: dict = Depends(get_curre
         raise HTTPException(status_code=400, detail="Mode must be one of: local, relay, remote")
     if body.mode == "relay" and not body.relay_host:
         raise HTTPException(status_code=400, detail="relay_host is required for relay mode")
-    data = _load_routing()
-    data.setdefault("domains", {}).setdefault(domain, {})
-    data["domains"][domain]["routing"] = {
-        "mode": body.mode,
-        "relay_host": body.relay_host,
-        "relay_port": body.relay_port,
-        "relay_username": body.relay_username,
-        "updated_at": datetime.datetime.now().isoformat(),
-    }
+    now = datetime.datetime.now().isoformat()
+    with connect() as conn:
+        conn.execute(
+            """INSERT OR REPLACE INTO email_routing (domain, mode, relay_host, relay_port, relay_username, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (domain, body.mode, body.relay_host, body.relay_port, body.relay_username, now),
+        )
     if body.mode == "relay" and body.relay_host:
         relay_conf = _generate_postfix_relay(domain, body)
         conf_path = Path("/etc/postfix/conf.d")
@@ -92,38 +79,38 @@ def set_routing(domain: str, body: RoutingConfig, user: dict = Depends(get_curre
             if body.relay_host not in existing:
                 sasl_path.write_text(existing + sasl_entry + "\n")
             utils.run_command(["postmap", "/etc/postfix/sasl_passwd"], check=False)
-    _save_routing(data)
     return {"status": "updated", "domain": domain, "mode": body.mode}
 
 
 @router.get("/catchall/{domain}")
 def get_catchall(domain: str, user: dict = Depends(get_current_user)):
-    data = _load_routing()
-    domain_data = data.get("domains", {}).get(domain, {})
-    catchall = domain_data.get("catchall", {"address": "", "enabled": False})
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT address, enabled, updated_at FROM email_catchall WHERE domain = ?",
+            (domain,),
+        ).fetchone()
+    if row:
+        catchall = {"address": row["address"], "enabled": bool(row["enabled"])}
+    else:
+        catchall = {"address": "", "enabled": False}
     return {"domain": domain, "catchall": catchall}
 
 
 @router.put("/catchall/{domain}")
 def set_catchall(domain: str, body: CatchAllConfig, user: dict = Depends(get_current_user)):
-    data = _load_routing()
-    data.setdefault("domains", {}).setdefault(domain, {})
-    data["domains"][domain]["catchall"] = {
-        "address": body.address,
-        "enabled": body.enabled,
-        "updated_at": datetime.datetime.now().isoformat(),
-    }
+    now = datetime.datetime.now().isoformat()
+    with connect() as conn:
+        conn.execute(
+            """INSERT OR REPLACE INTO email_catchall (domain, address, enabled, updated_at)
+               VALUES (?, ?, ?, ?)""",
+            (domain, body.address, 1 if body.enabled else 0, now),
+        )
     if body.enabled and body.address:
-        virtual_line = f"@{domain}  {body.address}"
-        vmap_path = Path(_postfix_virtual_map_path(domain))
+        vmap_path = Path(f"/etc/postfix/virtual_{domain}")
         existing = vmap_path.read_text() if vmap_path.exists() else ""
         lines = [l for l in existing.splitlines() if not l.startswith(f"@{domain}")]
-        lines.append(virtual_line)
+        lines.append(f"@{domain}  {body.address}")
         vmap_path.write_text("\n".join(lines) + "\n")
         utils.run_command(["postmap", str(vmap_path)], check=False)
         utils.service_action("reload", "postfix")
-    _save_routing(data)
     return {"status": "updated", "domain": domain, "catchall": body.address}
-
-
-from pathlib import Path

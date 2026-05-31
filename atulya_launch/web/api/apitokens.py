@@ -1,4 +1,4 @@
-"""API token management."""
+"""API token management — backed by SQLite."""
 
 import json
 import secrets
@@ -7,25 +7,10 @@ from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from atulya_launch import utils
 from atulya_launch.web.auth import get_current_user
+from atulya_launch.web.database import connect
 
 router = APIRouter(prefix="/api/tokens", tags=["tokens"])
-
-TOKENS_FILE = utils.CONFIG_DIR / "api_tokens.json"
-
-
-def _load_tokens() -> dict:
-    if TOKENS_FILE.exists():
-        with open(TOKENS_FILE, "r") as f:
-            return json.load(f) or {}
-    return {}
-
-
-def _save_tokens(data: dict):
-    utils.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    with open(TOKENS_FILE, "w") as f:
-        json.dump(data, f, indent=2)
 
 
 class TokenCreate(BaseModel):
@@ -36,52 +21,50 @@ class TokenCreate(BaseModel):
 
 @router.get("")
 def list_tokens(user: dict = Depends(get_current_user)):
-    tokens = _load_tokens()
     username = user.get("sub", "admin")
-    result = []
-    for tid, token in tokens.items():
-        if token.get("created_by") == username:
-            # Mask the token value
-            masked = token.get("token", "")[:8] + "..." if token.get("token") else ""
-            expired = False
-            if token.get("expires_at"):
-                exp = datetime.datetime.fromisoformat(token["expires_at"])
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT token_id, name, permissions, created_by, created_at, expires_at, last_used FROM api_tokens WHERE created_by = ? ORDER BY id DESC",
+            (username,),
+        ).fetchall()
+    tokens = []
+    for row in rows:
+        entry = dict(row)
+        expired = False
+        if entry.get("expires_at"):
+            try:
+                exp = datetime.datetime.fromisoformat(entry["expires_at"])
                 expired = exp < datetime.datetime.now(datetime.timezone.utc)
-            result.append({
-                "id": tid,
-                "name": token.get("name", ""),
-                "permissions": token.get("permissions", []),
-                "token_preview": masked,
-                "expires_at": token.get("expires_at"),
-                "created_at": token.get("created_at"),
-                "expired": expired,
-            })
-    return {"tokens": result}
+            except Exception:
+                pass
+        entry["expired"] = expired
+        try:
+            entry["permissions"] = json.loads(entry.get("permissions") or "[]")
+        except Exception:
+            entry["permissions"] = ["read"]
+        tokens.append(entry)
+    return {"tokens": tokens}
 
 
 @router.post("")
 def create_token(body: TokenCreate, user: dict = Depends(get_current_user)):
-    tokens = _load_tokens()
-    # Generate token
     token_value = secrets.token_hex(32)
-    now = datetime.datetime.now(datetime.timezone.utc)
+    token_id = token_value[:16]
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     expires_at = None
     if body.expires_days:
-        expires_at = (now + datetime.timedelta(days=body.expires_days)).isoformat()
-    # Find next ID
-    tid = str(max((int(k) for k in tokens.keys()), default=0) + 1)
-    tokens[tid] = {
-        "name": body.name,
-        "token": token_value,
-        "permissions": body.permissions,
-        "created_by": user.get("sub", "admin"),
-        "created_at": now.isoformat(),
-        "expires_at": expires_at,
-    }
-    _save_tokens(tokens)
+        expires_at = (now + datetime.timedelta(days=body.expires_days)).isoformat() if isinstance(now, str) else None
+        if isinstance(now, str):
+            expires_at = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=body.expires_days)).isoformat()
+    username = user.get("sub", "admin")
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO api_tokens (token_id, name, token_hash, permissions, created_by, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (token_id, body.name, token_value, json.dumps(body.permissions), username, now, expires_at),
+        )
     return {
         "status": "token created",
-        "id": tid,
+        "id": token_id,
         "token": token_value,
         "name": body.name,
         "expires_at": expires_at,
@@ -91,12 +74,13 @@ def create_token(body: TokenCreate, user: dict = Depends(get_current_user)):
 
 @router.delete("/{token_id}")
 def revoke_token(token_id: str, user: dict = Depends(get_current_user)):
-    tokens = _load_tokens()
-    if token_id not in tokens:
-        raise HTTPException(status_code=404, detail="Token not found")
     username = user.get("sub", "admin")
-    if tokens[token_id].get("created_by") != username:
-        raise HTTPException(status_code=403, detail="Not your token")
-    del tokens[token_id]
-    _save_tokens(tokens)
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT id FROM api_tokens WHERE token_id = ? AND created_by = ?",
+            (token_id, username),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Token not found")
+        conn.execute("DELETE FROM api_tokens WHERE token_id = ?", (token_id,))
     return {"status": "revoked", "id": token_id}

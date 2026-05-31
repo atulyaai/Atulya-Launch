@@ -1,29 +1,15 @@
 """IP allowlist/blocklist management API."""
 
-import json
+import datetime
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from atulya_launch import utils
 from atulya_launch.web.auth import get_current_user
+from atulya_launch.web.database import connect
 
 router = APIRouter(prefix="/api/ipaccess", tags=["ipaccess"])
-
-IP_ACCESS_FILE = utils.CONFIG_DIR / "ip_access.json"
-
-
-def _load_ip_access() -> dict:
-    if IP_ACCESS_FILE.exists():
-        with open(IP_ACCESS_FILE, "r") as f:
-            return json.load(f) or {"rules": []}
-    return {"rules": []}
-
-
-def _save_ip_access(data: dict):
-    utils.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    with open(IP_ACCESS_FILE, "w") as f:
-        json.dump(data, f, indent=2)
 
 
 class IPAccessRule(BaseModel):
@@ -45,125 +31,96 @@ def _validate_ip_or_cidr(ip: str) -> bool:
 def _apply_iptables_rule(ip: str, action: str, scope: str):
     if not utils.is_linux():
         return
-
-    port_map = {
-        "panel": "8000",
-        "ssh": "22",
-        "ftp": "21",
-    }
+    port_map = {"panel": "8000", "ssh": "22", "ftp": "21"}
     port = port_map.get(scope, "8000")
-
     if action == "allow":
         cmd = ["iptables", "-I", "INPUT", "-p", "tcp", "--dport", port, "-s", ip, "-j", "ACCEPT"]
     else:
         cmd = ["iptables", "-I", "INPUT", "-p", "tcp", "--dport", port, "-s", ip, "-j", "DROP"]
-
     utils.run_command(cmd, check=False)
 
 
 def _remove_iptables_rule(ip: str, action: str, scope: str):
     if not utils.is_linux():
         return
-
-    port_map = {
-        "panel": "8000",
-        "ssh": "22",
-        "ftp": "21",
-    }
+    port_map = {"panel": "8000", "ssh": "22", "ftp": "21"}
     port = port_map.get(scope, "8000")
-
-    if action == "allow":
-        target = "ACCEPT"
-    else:
-        target = "DROP"
-
+    target = "ACCEPT" if action == "allow" else "DROP"
     cmd = ["iptables", "-D", "INPUT", "-p", "tcp", "--dport", port, "-s", ip, "-j", target]
     utils.run_command(cmd, check=False)
 
 
 @router.get("/list")
 def list_ip_access(user: dict = Depends(get_current_user)):
-    data = _load_ip_access()
-    return {"rules": data.get("rules", [])}
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT id, ip_address, action, scope, description, created_at, created_by FROM ip_access_rules ORDER BY id",
+        ).fetchall()
+    return {"rules": [dict(r) for r in rows]}
 
 
 @router.post("")
 def add_ip_rule(body: IPAccessRule, user: dict = Depends(get_current_user)):
     if not _validate_ip_or_cidr(body.ip_address):
         raise HTTPException(status_code=400, detail="Invalid IP address or CIDR notation")
-
     if body.action not in ("allow", "block"):
         raise HTTPException(status_code=400, detail="Action must be 'allow' or 'block'")
     if body.scope not in ("panel", "ssh", "ftp"):
         raise HTTPException(status_code=400, detail="Scope must be 'panel', 'ssh', or 'ftp'")
-
-    data = _load_ip_access()
-    rules = data.get("rules", [])
-
-    for rule in rules:
-        if rule["ip_address"] == body.ip_address and rule["scope"] == body.scope:
+    with connect() as conn:
+        existing = conn.execute(
+            "SELECT id FROM ip_access_rules WHERE ip_address = ? AND scope = ?",
+            (body.ip_address, body.scope),
+        ).fetchone()
+        if existing:
             raise HTTPException(status_code=409, detail="Rule already exists for this IP and scope")
-
-    import datetime
-    new_rule = {
-        "id": len(rules) + 1,
-        "ip_address": body.ip_address,
-        "action": body.action,
-        "scope": body.scope,
-        "description": body.description or "",
-        "created_at": datetime.datetime.now().isoformat(),
-        "created_by": user.get("sub", "admin"),
-    }
-    rules.append(new_rule)
-    data["rules"] = rules
-    _save_ip_access(data)
-
+        now = datetime.datetime.now().isoformat()
+        cursor = conn.execute(
+            "INSERT INTO ip_access_rules (ip_address, action, scope, description, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?)",
+            (body.ip_address, body.action, body.scope, body.description or "", now, user.get("sub", "admin")),
+        )
+        rule_id = cursor.lastrowid
+        new_rule = {
+            "id": rule_id,
+            "ip_address": body.ip_address,
+            "action": body.action,
+            "scope": body.scope,
+            "description": body.description or "",
+            "created_at": now,
+            "created_by": user.get("sub", "admin"),
+        }
     try:
         _apply_iptables_rule(body.ip_address, body.action, body.scope)
     except Exception as e:
         return {"status": "saved_but_not_applied", "rule": new_rule, "error": str(e)}
-
     return {"status": "added", "rule": new_rule}
 
 
 @router.delete("/{rule_id}")
 def remove_ip_rule(rule_id: int, user: dict = Depends(get_current_user)):
-    data = _load_ip_access()
-    rules = data.get("rules", [])
-
-    target = None
-    for rule in rules:
-        if rule["id"] == rule_id:
-            target = rule
-            break
-
-    if not target:
-        raise HTTPException(status_code=404, detail="Rule not found")
-
-    rules = [r for r in rules if r["id"] != rule_id]
-    data["rules"] = rules
-    _save_ip_access(data)
-
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT id, ip_address, action, scope FROM ip_access_rules WHERE id = ?", (rule_id,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Rule not found")
+        target = dict(row)
+        conn.execute("DELETE FROM ip_access_rules WHERE id = ?", (rule_id,))
     try:
         _remove_iptables_rule(target["ip_address"], target["action"], target["scope"])
     except Exception:
         pass
-
     return {"status": "removed", "rule": target}
 
 
 @router.post("/purge")
 def purge_ip_rules(user: dict = Depends(get_current_user)):
-    data = _load_ip_access()
-    rules = data.get("rules", [])
-
-    for rule in rules:
-        try:
-            _remove_iptables_rule(rule["ip_address"], rule["action"], rule["scope"])
-        except Exception:
-            pass
-
-    data["rules"] = []
-    _save_ip_access(data)
-
-    return {"status": "purged", "removed": len(rules)}
+    with connect() as conn:
+        rows = conn.execute("SELECT ip_address, action, scope FROM ip_access_rules").fetchall()
+        for r in rows:
+            try:
+                _remove_iptables_rule(r["ip_address"], r["action"], r["scope"])
+            except Exception:
+                pass
+        conn.execute("DELETE FROM ip_access_rules")
+    return {"status": "purged", "removed": len(rows)}

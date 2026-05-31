@@ -5,12 +5,10 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from atulya_launch import utils
 from atulya_launch.web.auth import get_current_user
+from atulya_launch.web.database import connect
 
 router = APIRouter(prefix="/api/settings/password-policy", tags=["password-policy"])
-
-PASSWORD_POLICY_FILE = utils.CONFIG_DIR / "password_policy.json"
 
 DEFAULT_POLICY = {
     "min_length": 8,
@@ -28,19 +26,26 @@ DEFAULT_POLICY = {
 
 
 def _load_policy() -> dict:
-    if PASSWORD_POLICY_FILE.exists():
-        with open(PASSWORD_POLICY_FILE, "r") as f:
-            stored = json.load(f) or {}
-            policy = DEFAULT_POLICY.copy()
-            policy.update(stored)
-            return policy
-    return DEFAULT_POLICY.copy()
+    with connect() as conn:
+        rows = conn.execute("SELECT key, value FROM password_policy").fetchall()
+    stored = {}
+    for r in rows:
+        try:
+            stored[r["key"]] = json.loads(r["value"])
+        except (json.JSONDecodeError, TypeError):
+            stored[r["key"]] = r["value"]
+    policy = DEFAULT_POLICY.copy()
+    policy.update(stored)
+    return policy
 
 
 def _save_policy(data: dict):
-    utils.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    with open(PASSWORD_POLICY_FILE, "w") as f:
-        json.dump(data, f, indent=2)
+    with connect() as conn:
+        for key, value in data.items():
+            conn.execute(
+                "INSERT OR REPLACE INTO password_policy (key, value) VALUES (?, ?)",
+                (key, json.dumps(value)),
+            )
 
 
 class PasswordPolicyUpdate(BaseModel):

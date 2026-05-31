@@ -2,31 +2,17 @@
 
 import json
 import time
-from pathlib import Path
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from atulya_launch import utils
 from atulya_launch.web.auth import get_current_user
+from atulya_launch.web.database import connect
 
 router = APIRouter(prefix="/api/monitor/history", tags=["resource-history"])
 
-HISTORY_FILE = utils.CONFIG_DIR / "resource_history.json"
 MAX_HISTORY_ENTRIES = 8640
 COLLECTION_INTERVAL_SECONDS = 10
-
-
-def _load_history() -> list:
-    if HISTORY_FILE.exists():
-        with open(HISTORY_FILE, "r") as f:
-            return json.load(f) or []
-    return []
-
-
-def _save_history(data: list):
-    utils.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    with open(HISTORY_FILE, "w") as f:
-        json.dump(data, f)
 
 
 def _collect_sample() -> dict:
@@ -100,9 +86,13 @@ def get_resource_history(
     interval: Optional[int] = Query(None, description="Sampling interval in seconds"),
     user: dict = Depends(get_current_user)
 ):
-    history = _load_history()
     cutoff = time.time() - (hours * 3600)
-    filtered = [h for h in history if h.get("timestamp", 0) > cutoff]
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT sample_json, timestamp FROM resource_history WHERE timestamp > ? ORDER BY timestamp",
+            (cutoff,),
+        ).fetchall()
+    filtered = [json.loads(r["sample_json"]) for r in rows]
 
     if interval and len(filtered) > 1:
         sampled = []
@@ -123,33 +113,42 @@ def get_resource_history(
 @router.post("/collect")
 def trigger_collection(user: dict = Depends(get_current_user)):
     sample = _collect_sample()
+    ts = sample.get("timestamp", time.time())
 
-    history = _load_history()
-    history.append(sample)
-
-    max_entries = MAX_HISTORY_ENTRIES
-    if len(history) > max_entries:
-        history = history[-max_entries:]
-
-    _save_history(history)
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO resource_history (sample_json, timestamp) VALUES (?, ?)",
+            (json.dumps(sample), ts),
+        )
+        count = conn.execute("SELECT COUNT(*) as c FROM resource_history").fetchone()["c"]
+        if count > MAX_HISTORY_ENTRIES:
+            conn.execute(
+                "DELETE FROM resource_history WHERE id NOT IN (SELECT id FROM resource_history ORDER BY timestamp DESC LIMIT ?)",
+                (MAX_HISTORY_ENTRIES,),
+            )
+        total = conn.execute("SELECT COUNT(*) as c FROM resource_history").fetchone()["c"]
 
     return {
         "status": "collected",
         "sample": sample,
-        "total_samples": len(history),
+        "total_samples": total,
     }
 
 
 @router.get("/latest")
 def get_latest_sample(user: dict = Depends(get_current_user)):
-    history = _load_history()
-    if not history:
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT sample_json FROM resource_history ORDER BY timestamp DESC LIMIT 1",
+        ).fetchone()
+    if not row:
         sample = _collect_sample()
         return {"sample": sample, "note": "freshly_collected"}
-    return {"sample": history[-1]}
+    return {"sample": json.loads(row["sample_json"])}
 
 
 @router.delete("/purge")
 def purge_history(user: dict = Depends(get_current_user)):
-    _save_history([])
+    with connect() as conn:
+        conn.execute("DELETE FROM resource_history")
     return {"status": "purged"}

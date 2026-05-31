@@ -1,36 +1,13 @@
-"""URL redirect management API."""
+"""URL redirect management API — backed by SQLite."""
 
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from atulya_launch import utils
 from atulya_launch.web.auth import get_current_user
+from atulya_launch.web.database import connect
 
 router = APIRouter(prefix="/api/redirects", tags=["redirects"])
-
-REDIRECTS_FILE = utils.CONFIG_DIR / "redirects.json"
-
-
-def _load_redirects() -> dict:
-    if REDIRECTS_FILE.exists():
-        import json
-        with open(REDIRECTS_FILE, "r") as f:
-            return json.load(f) or {}
-    return {}
-
-
-def _save_redirects(data: dict):
-    utils.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    import json
-    with open(REDIRECTS_FILE, "w") as f:
-        json.dump(data, f, indent=2)
-
-
-def _next_id(data: dict) -> int:
-    if not data:
-        return 1
-    return max(int(k) for k in data.keys()) + 1
 
 
 class RedirectCreate(BaseModel):
@@ -46,47 +23,47 @@ class RedirectUpdate(BaseModel):
 
 @router.get("")
 def list_redirects(user: dict = Depends(get_current_user)):
-    data = _load_redirects()
-    return {"redirects": data}
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT id, domain, from_url, to_url, redirect_type, created_by, created_at FROM redirects ORDER BY id"
+        ).fetchall()
+    return {"redirects": [dict(r) for r in rows]}
 
 
 @router.post("")
 def create_redirect(body: RedirectCreate, user: dict = Depends(get_current_user)):
     if body.redirect_type not in (301, 302, 307):
         raise HTTPException(status_code=400, detail="Redirect type must be 301, 302, or 307")
-    data = _load_redirects()
-    nid = _next_id(data)
-    record = {
-        "from_url": body.from_url,
-        "to_url": body.to_url,
-        "type": body.redirect_type,
-        "created_by": user.get("sub", "admin"),
-    }
-    data[str(nid)] = record
-    _save_redirects(data)
-    return {"status": "created", "id": str(nid)}
+    now = __import__("datetime").datetime.utcnow().isoformat() + "Z"
+    username = user.get("sub", "admin")
+    with connect() as conn:
+        cursor = conn.execute(
+            "INSERT INTO redirects (from_url, to_url, redirect_type, created_by, created_at) VALUES (?, ?, ?, ?, ?)",
+            (body.from_url, body.to_url, body.redirect_type, username, now),
+        )
+        redirect_id = cursor.lastrowid
+    return {"status": "created", "id": redirect_id}
 
 
 @router.delete("/{redirect_id}")
-def delete_redirect(redirect_id: str, user: dict = Depends(get_current_user)):
-    data = _load_redirects()
-    if redirect_id not in data:
-        raise HTTPException(status_code=404, detail="Redirect not found")
-    del data[redirect_id]
-    _save_redirects(data)
+def delete_redirect(redirect_id: int, user: dict = Depends(get_current_user)):
+    with connect() as conn:
+        cursor = conn.execute("DELETE FROM redirects WHERE id = ?", (redirect_id,))
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Redirect not found")
     return {"status": "deleted", "id": redirect_id}
 
 
 @router.put("/{redirect_id}")
-def update_redirect(redirect_id: str, body: RedirectUpdate, user: dict = Depends(get_current_user)):
-    data = _load_redirects()
-    if redirect_id not in data:
-        raise HTTPException(status_code=404, detail="Redirect not found")
-    if body.to_url is not None:
-        data[redirect_id]["to_url"] = body.to_url
-    if body.redirect_type is not None:
-        if body.redirect_type not in (301, 302, 307):
-            raise HTTPException(status_code=400, detail="Redirect type must be 301, 302, or 307")
-        data[redirect_id]["type"] = body.redirect_type
-    _save_redirects(data)
-    return {"status": "updated", "id": redirect_id, "entry": data[redirect_id]}
+def update_redirect(redirect_id: int, body: RedirectUpdate, user: dict = Depends(get_current_user)):
+    with connect() as conn:
+        row = conn.execute("SELECT id FROM redirects WHERE id = ?", (redirect_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Redirect not found")
+        if body.to_url is not None:
+            conn.execute("UPDATE redirects SET to_url = ? WHERE id = ?", (body.to_url, redirect_id))
+        if body.redirect_type is not None:
+            if body.redirect_type not in (301, 302, 307):
+                raise HTTPException(status_code=400, detail="Redirect type must be 301, 302, or 307")
+            conn.execute("UPDATE redirects SET redirect_type = ? WHERE id = ?", (body.redirect_type, redirect_id))
+    return {"status": "updated", "id": redirect_id}

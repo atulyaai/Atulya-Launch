@@ -22,8 +22,8 @@ from fastapi.templating import Jinja2Templates
 
 
 from .. import core
-from .database import init_db
-from .auth import get_current_user, authenticate, create_user, destroy_session
+from .database import init_db, audit_log
+from .auth import get_current_user, authenticate, create_user, destroy_session, validate_partial_session, destroy_partial_session, complete_2fa_login, _verify_totp
 from .flash import add_flash, request_flashes
 
 
@@ -120,7 +120,7 @@ def _register_api_routers(app: FastAPI) -> dict[str, list[str]]:
     registered: list[str] = []
     errors: list[str] = []
     for module_info in sorted(pkgutil.iter_modules(api.__path__), key=lambda item: item.name):
-        if module_info.ispkg:
+        if module_info.name == "plugins":
             continue
         module_name: str = f"{api.__name__}.{module_info.name}"
         try:
@@ -133,6 +133,21 @@ def _register_api_routers(app: FastAPI) -> dict[str, list[str]]:
             registered.append(module_info.name)
         except Exception as exc:
             errors.append(f"{module_info.name}: {exc.__class__.__name__}: {exc}")
+
+    # Auto-discover plugin API modules
+    plugins_path = Path(__file__).parent / "api" / "plugins"
+    if plugins_path.is_dir():
+        for plugin_info in sorted(pkgutil.iter_modules([str(plugins_path)])):
+            plugin_name: str = f"atulya_launch.web.api.plugins.{plugin_info.name}"
+            try:
+                plugin_module: Any = importlib.import_module(plugin_name)
+                plugin_router: Any = getattr(plugin_module, "router", None)
+                if plugin_router is not None:
+                    app.include_router(plugin_router)
+                    registered.append(f"plugins/{plugin_info.name}")
+            except Exception as exc:
+                errors.append(f"plugins/{plugin_info.name}: {exc.__class__.__name__}: {exc}")
+
     app.state.api_routers_registered = registered
     app.state.api_router_errors = errors
     return {"registered": registered, "errors": errors}
@@ -152,6 +167,12 @@ def create_app() -> FastAPI:
 
     config_dir: Path = core.ensure_dirs()
     init_db(config_dir)
+
+    try:
+        from .sites_service import migrate_config_json_to_sqlite
+        migrate_config_json_to_sqlite()
+    except Exception:
+        pass
 
     try:
         with __import__("contextlib").nullcontext():
@@ -191,7 +212,7 @@ def create_app() -> FastAPI:
                         return JSONResponse({"error": "invalid csrf token"}, status_code=403)
         return await call_next(request)
 
-    from .routes import dashboard, sites, dns, email as email_mod, databases, ssl as ssl_mod, files, backups, monitoring, firewall, apps, settings, docker, migrations, cron as cron_mod, deploy, logs, security, loadtest, servers, mail as mail_mod, subdomains, redirects as redirect_mod, ipdeny, hotlink
+    from .routes import dashboard, sites, dns, email as email_mod, databases, ssl as ssl_mod, files, backups, monitoring, firewall, apps, settings, docker, migrations, cron as cron_mod, deploy, logs, security, loadtest, servers, mail as mail_mod, subdomains, redirects as redirect_mod, ipdeny, hotlink, sshterminal, webmail as webmail_mod
     _install_template_globals([
         templates,
         dashboard.templates,
@@ -215,10 +236,12 @@ def create_app() -> FastAPI:
         loadtest.templates,
         servers.templates,
         mail_mod.templates,
+        sshterminal.templates,
         subdomains.templates,
         redirect_mod.templates,
         ipdeny.templates,
         hotlink.templates,
+        webmail_mod.templates,
     ])
     app.include_router(dashboard.router)
     app.include_router(sites.router)
@@ -241,10 +264,12 @@ def create_app() -> FastAPI:
     app.include_router(loadtest.router)
     app.include_router(servers.router)
     app.include_router(mail_mod.router)
+    app.include_router(sshterminal.router)
     app.include_router(subdomains.router)
     app.include_router(redirect_mod.router)
     app.include_router(ipdeny.router)
     app.include_router(hotlink.router)
+    app.include_router(webmail_mod.router)
 
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -303,7 +328,26 @@ def create_app() -> FastAPI:
         result: Any = authenticate(username, password)
         if not result:
             return RedirectResponse("/login?error=1", status_code=302)
+        if result.get("requires_2fa"):
+            response = RedirectResponse("/login/2fa", status_code=302)
+            response.set_cookie(
+                "partial_token", result["partial_token"],
+                httponly=True, samesite="lax",
+                secure=os.environ.get("PANEL_HTTPS", "").lower() in ("1", "true"),
+                max_age=300, path="/",
+            )
+            return response
         login_limiter.reset(client_ip)
+        if result.get("must_change_password"):
+            response = RedirectResponse("/settings/password?must_change=1", status_code=302)
+            response.set_cookie(
+                "session_token", result["token"],
+                httponly=True, samesite="lax",
+                secure=os.environ.get("PANEL_HTTPS", "").lower() in ("1", "true"),
+                max_age=86400, path="/",
+            )
+            add_flash(result["token"], "You must change your password before continuing.", "warning")
+            return response
         response: RedirectResponse = RedirectResponse("/dashboard", status_code=302)
         response.set_cookie(
             "session_token", result["token"],
@@ -313,6 +357,47 @@ def create_app() -> FastAPI:
             path="/",
         )
         add_flash(result["token"], "Signed in successfully.", "success")
+        return response
+
+    @app.get("/login/2fa", response_class=HTMLResponse)
+    async def login_2fa_page(request: Request) -> Response:
+        partial_token: str | None = request.cookies.get("partial_token")
+        username = validate_partial_session(partial_token)
+        if not username:
+            return RedirectResponse("/login?error=session_expired", status_code=302)
+        error: str = request.query_params.get("error", "")
+        return templates.TemplateResponse(request, "2fa_challenge.html", {"error": error, "username": username})
+
+    @app.post("/login/2fa")
+    async def login_2fa_post(request: Request) -> RedirectResponse:
+        client_ip: str = request.client.host if request.client else "unknown"
+        if not login_limiter.check(client_ip):
+            return RedirectResponse("/login/2fa?error=rate_limited", status_code=429)
+        partial_token: str | None = request.cookies.get("partial_token")
+        username = validate_partial_session(partial_token)
+        if not username:
+            return RedirectResponse("/login?error=session_expired", status_code=302)
+        form: Any = await request.form()
+        code: str = (form.get("code", "") or "").strip()
+        if not code or len(code) != 6:
+            return RedirectResponse("/login/2fa?error=invalid_code", status_code=302)
+        if not _verify_totp(username, code):
+            audit_log(username, "auth.login.2fa_failed", "denied")
+            return RedirectResponse("/login/2fa?error=invalid_code", status_code=302)
+        destroy_partial_session(partial_token)
+        login_limiter.reset(client_ip)
+        session = complete_2fa_login(username)
+        if not session:
+            return RedirectResponse("/login?error=1", status_code=302)
+        response = RedirectResponse("/dashboard", status_code=302)
+        response.delete_cookie("partial_token", path="/")
+        response.set_cookie(
+            "session_token", session["token"],
+            httponly=True, samesite="lax",
+            secure=os.environ.get("PANEL_HTTPS", "").lower() in ("1", "true"),
+            max_age=86400, path="/",
+        )
+        add_flash(session["token"], "Signed in successfully (2FA).", "success")
         return response
 
     @app.get("/logout")
@@ -345,8 +430,44 @@ def create_app() -> FastAPI:
         result: Any = authenticate(username, password)
         if not result:
             return JSONResponse({"error": "invalid credentials"}, status_code=401)
+        if result.get("requires_2fa"):
+            return JSONResponse({
+                "requires_2fa": True,
+                "partial_token": result["partial_token"],
+                "message": "2FA code required. POST to /api/auth/2fa with partial_token and code.",
+            })
         login_limiter.reset(f"api:{client_ip}")
-        return JSONResponse({"token": result["token"], "expires": result["expires"]})
+        resp = {"token": result["token"], "expires": result["expires"]}
+        if result.get("must_change_password"):
+            resp["must_change_password"] = True
+            resp["message"] = "You must change your password. POST to /api/auth/change-password."
+        return JSONResponse(resp)
+
+    @app.post("/api/auth/2fa")
+    async def api_2fa_post(request: Request) -> JSONResponse:
+        client_ip: str = request.client.host if request.client else "unknown"
+        if not login_limiter.check(f"api:{client_ip}"):
+            return JSONResponse({"error": "rate_limited"}, status_code=429)
+        try:
+            body: dict = await request.json()
+        except Exception:
+            return JSONResponse({"error": "invalid json"}, status_code=400)
+        partial_token: str = body.get("partial_token", "")
+        code: str = body.get("code", "")
+        if not partial_token or not code:
+            return JSONResponse({"error": "partial_token and code required"}, status_code=400)
+        username = validate_partial_session(partial_token)
+        if not username:
+            return JSONResponse({"error": "invalid or expired partial token"}, status_code=401)
+        if not _verify_totp(username, code):
+            audit_log(username, "auth.login.2fa_failed", "denied")
+            return JSONResponse({"error": "invalid 2FA code"}, status_code=401)
+        destroy_partial_session(partial_token)
+        login_limiter.reset(f"api:{client_ip}")
+        session = complete_2fa_login(username)
+        if not session:
+            return JSONResponse({"error": "login failed"}, status_code=500)
+        return JSONResponse({"token": session["token"], "expires": session["expires"]})
 
     @app.get("/api/auth/logout")
     async def api_logout(request: Request) -> JSONResponse:
@@ -359,6 +480,28 @@ def create_app() -> FastAPI:
             destroy_session(token)
         return JSONResponse({"ok": True})
 
+    @app.post("/api/auth/change-password")
+    async def api_change_password(request: Request) -> JSONResponse:
+        user = get_current_user(request)
+        if not user:
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
+        try:
+            body: dict = await request.json()
+        except Exception:
+            return JSONResponse({"error": "invalid json"}, status_code=400)
+        new_password = body.get("new_password", "")
+        if not new_password or len(new_password) < 8:
+            return JSONResponse({"error": "password must be at least 8 characters"}, status_code=400)
+        from .auth import hash_password, validate_password_policy
+        errors = validate_password_policy(new_password)
+        if errors:
+            return JSONResponse({"error": f"Password policy: {'; '.join(errors)}"}, status_code=400)
+        pw_hash = hash_password(new_password)
+        with connect() as cur:
+            cur.execute("UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?", (pw_hash, user["id"]))
+        audit_log(user["username"], "auth.password_change", "ok")
+        return JSONResponse({"ok": True, "message": "Password changed successfully"})
+
     templates.env.globals["panel_version"] = "1.0.0"
     templates.env.globals["csrf_token"] = csrf.generate
     templates.env.globals["get_flashed_messages"] = request_flashes
@@ -368,6 +511,13 @@ def create_app() -> FastAPI:
     @app.get("/api/router-status")
     async def api_router_status_endpoint() -> JSONResponse:
         return JSONResponse(api_router_status)
+
+    # Start background scheduler
+    try:
+        from .scheduler import start_scheduler
+        start_scheduler()
+    except Exception:
+        pass
 
     return app
 

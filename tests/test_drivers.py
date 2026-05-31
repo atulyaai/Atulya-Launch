@@ -15,7 +15,19 @@ class TestPlatformDrivers(unittest.TestCase):
         )
         self.assertTrue(result.ok)
         self.assertIn("/etc/bind/zones/db.example.com", result.files)
-        self.assertIn(["systemctl", "reload", "bind9"], result.commands)
+        self.assertIn("/etc/bind/named.conf.local", result.files)
+        self.assertIn(["named-checkzone", "example.com", "/etc/bind/zones/db.example.com"], result.commands)
+        self.assertIn(["rndc", "reload", "example.com"], result.commands)
+
+    def test_linux_driver_plans_bind_zone_delete(self) -> None:
+        driver = get_platform_driver("linux", dry_run=True)
+        result = driver.dns.delete_zone("example.com")
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.action, "bind.delete_zone")
+        self.assertIn("/etc/bind/zones/db.example.com", result.files)
+        self.assertIn("/etc/bind/named.conf.local", result.files)
+        self.assertIn(["rndc", "reload"], result.commands)
 
     def test_windows_driver_uses_caddy_scaffold(self) -> None:
         driver = get_platform_driver("windows", dry_run=True)

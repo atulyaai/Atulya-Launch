@@ -14,25 +14,33 @@ from pydantic import BaseModel
 
 from atulya_launch import utils
 from atulya_launch.web.auth import get_current_user
+from atulya_launch.web.database import connect
 
 router = APIRouter(prefix="/api/vpn", tags=["vpn"])
 
-VPN_CONFIG_FILE = utils.CONFIG_DIR / "vpn.json"
 WG_DIR = Path("/etc/wireguard")
 WG_INTERFACE = "wg0"
 
 
 def _load_vpn_config() -> dict:
-    if VPN_CONFIG_FILE.exists():
-        with open(VPN_CONFIG_FILE, "r") as f:
-            return json.load(f) or {}
-    return {}
+    with connect() as conn:
+        rows = conn.execute("SELECT key, value FROM vpn_config").fetchall()
+    config = {}
+    for r in rows:
+        try:
+            config[r["key"]] = json.loads(r["value"])
+        except (json.JSONDecodeError, TypeError):
+            config[r["key"]] = r["value"]
+    return config
 
 
 def _save_vpn_config(data: dict):
-    utils.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    with open(VPN_CONFIG_FILE, "w") as f:
-        json.dump(data, f, indent=2)
+    with connect() as conn:
+        for key, value in data.items():
+            conn.execute(
+                "INSERT OR REPLACE INTO vpn_config (key, value) VALUES (?, ?)",
+                (key, json.dumps(value)),
+            )
 
 
 def _wg_available() -> bool:
@@ -249,7 +257,9 @@ def add_peer(body: PeerAdd, user: dict = Depends(get_current_user)):
 
     utils.run_command(wg_add_cmd, check=False)
 
-    config.setdefault("peers", []).append(peer)
+    peers = config.get("peers", [])
+    peers.append(peer)
+    config["peers"] = peers
     _save_vpn_config(config)
 
     return {"status": "added", "peer": peer}

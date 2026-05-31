@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% set active = "ssh_terminal" %}
+{% block title %}SSH Terminal - Atulya Launch{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.5.0/css/xterm.css">
+<script src="https://cdn.jsdelivr.net/npm/xterm@5.5.0/lib/xterm.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.10.0/lib/xterm-addon-fit.js"></script>
+
+<style>
+    .terminal-layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 16px; min-height: calc(100vh - 120px); }
+    .terminal-panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+    .terminal-panel h3 { font-size: 15px; margin-bottom: 14px; }
+    .terminal-actions { display: flex; gap: 8px; margin-top: 16px; }
+    .terminal-actions .btn { justify-content: center; flex: 1; }
+    .terminal-status { margin-top: 14px; color: var(--text-dim); font-size: 13px; min-height: 18px; }
+    .terminal-wrap { min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+    .terminal-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; color: var(--text-dim); font-size: 13px; }
+    #terminal { flex: 1; min-height: 520px; background: #05070a; border: 1px solid var(--border); border-radius: 8px; padding: 8px; overflow: hidden; }
+    @media (max-width: 900px) {
+        .terminal-layout { grid-template-columns: 1fr; }
+        #terminal { min-height: 420px; }
+    }
+</style>
+
+<div class="header">
+    <h2>SSH Terminal</h2>
+    <div class="user-info">WebSocket PTY</div>
+</div>
+
+<div class="terminal-layout">
+    <aside class="terminal-panel">
+        <h3>Connection</h3>
+        <form id="terminalConnectForm">
+            <div class="form-group">
+                <label>Host</label>
+                <input type="text" id="sshHost" value="127.0.0.1" required>
+            </div>
+            <div class="form-group">
+                <label>Port</label>
+                <input type="number" id="sshPort" value="22" min="1" max="65535" required>
+            </div>
+            <div class="form-group">
+                <label>Username</label>
+                <input type="text" id="sshUsername" value="root" required>
+            </div>
+            <div class="form-group">
+                <label>Password</label>
+                <input type="password" id="sshPassword" autocomplete="current-password">
+            </div>
+            <div class="form-group">
+                <label>Private Key Path</label>
+                <input type="text" id="sshKeyPath" placeholder="/home/user/.ssh/id_rsa">
+            </div>
+            <div class="terminal-actions">
+                <button type="submit" class="btn btn-primary" id="connectBtn">Connect</button>
+                <button type="button" class="btn btn-ghost" id="disconnectBtn">Disconnect</button>
+            </div>
+        </form>
+        <div class="terminal-status" id="terminalStatus">Disconnected</div>
+    </aside>
+
+    <section class="terminal-wrap">
+        <div class="terminal-toolbar">
+            <span id="terminalSession">No active session</span>
+            <button type="button" class="btn btn-ghost" id="clearTerminalBtn">Clear</button>
+        </div>
+        <div id="terminal"></div>
+    </section>
+</div>
+
+<script>
+    var term = new Terminal({
+        cursorBlink: true,
+        convertEol: true,
+        fontFamily: 'Consolas, "Liberation Mono", monospace',
+        fontSize: 13,
+        theme: { background: '#05070a', foreground: '#e4e6ed', cursor: '#e4e6ed' }
+    });
+    var fitAddon = new FitAddon.FitAddon();
+    var socket = null;
+    var sessionId = null;
+    var terminalEl = document.getElementById('terminal');
+    var statusEl = document.getElementById('terminalStatus');
+    var sessionEl = document.getElementById('terminalSession');
+    term.loadAddon(fitAddon);
+    term.open(terminalEl);
+    fitAddon.fit();
+    term.writeln('Atulya Launch SSH terminal');
+
+    function setStatus(message) {
+        statusEl.textContent = message;
+    }
+
+    function csrfHeaders() {
+        return window.ATULYA_CSRF_TOKEN ? { 'X-CSRF-Token': window.ATULYA_CSRF_TOKEN } : {};
+    }
+
+    function resizeRemote() {
+        if (!socket || socket.readyState !== WebSocket.OPEN) return;
+        fitAddon.fit();
+        socket.send(JSON.stringify({ type: 'resize', rows: term.rows, cols: term.cols }));
+    }
+
+    document.getElementById('terminalConnectForm').addEventListener('submit', async function (event) {
+        event.preventDefault();
+        if (socket) socket.close();
+        setStatus('Connecting...');
+        var payload = {
+            host: document.getElementById('sshHost').value.trim(),
+            port: Number(document.getElementById('sshPort').value || 22),
+            username: document.getElementById('sshUsername').value.trim(),
+            password: document.getElementById('sshPassword').value || null,
+            key_path: document.getElementById('sshKeyPath').value.trim() || null
+        };
+        try {
+            var response = await fetch('/api/ssh/connect', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: Object.assign({ 'Content-Type': 'application/json' }, csrfHeaders()),
+                body: JSON.stringify(payload)
+            });
+            var data = await response.json();
+            if (!response.ok) throw new Error(data.detail || data.error || 'Connection failed');
+            sessionId = data.session_id;
+            sessionEl.textContent = 'Session ' + sessionId + ' on ' + payload.host;
+            var protocol = location.protocol === 'https:' ? 'wss://' : 'ws://';
+            socket = new WebSocket(protocol + location.host + '/ws/ssh?session_id=' + encodeURIComponent(sessionId));
+            socket.onopen = function () {
+                setStatus('Connected');
+                term.focus();
+                resizeRemote();
+            };
+            socket.onmessage = function (message) {
+                try {
+                    var parsed = JSON.parse(message.data);
+                    if (parsed.error) {
+                        term.writeln('\r\nERROR: ' + parsed.error);
+                        setStatus('Error');
+                        return;
+                    }
+                    if (parsed.status) {
+                        setStatus(parsed.status);
+                        return;
+                    }
+                } catch (error) {}
+                term.write(message.data);
+            };
+            socket.onclose = function () {
+                setStatus('Disconnected');
+                socket = null;
+            };
+        } catch (error) {
+            setStatus(error.message);
+            term.writeln('\r\nERROR: ' + error.message);
+        }
+    });
+
+    term.onData(function (data) {
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({ type: 'input', data: data }));
+        }
+    });
+
+    document.getElementById('disconnectBtn').addEventListener('click', function () {
+        if (socket) socket.close();
+    });
+    document.getElementById('clearTerminalBtn').addEventListener('click', function () {
+        term.clear();
+    });
+    window.addEventListener('resize', resizeRemote);
+</script>
+{% endblock %}

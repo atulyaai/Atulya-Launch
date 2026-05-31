@@ -23,11 +23,13 @@ import requests
 
 
 def _default_config_dir() -> Path:
-    """Determine the base config directory from env or default home path."""
+    """Determine the base config directory from env or default home path.
+    Uses the same path as utils.CONFIG_DIR to avoid split-brain config."""
     configured: str | None = os.environ.get("ATULYA_HOME")
     if configured:
         return Path(configured).expanduser()
-    return Path.home() / ".atulya"
+    from atulya_launch import utils
+    return utils.CONFIG_DIR
 
 
 CONFIG_DIR: Path = _default_config_dir()
@@ -336,6 +338,19 @@ def site_create(domain: str, web_root: str | None = None, proxy_pass: str | None
     cfg["updated_at"] = datetime.utcnow().isoformat() + "Z"
     save_config(cfg)
     audit_event("site.create", "ok", {"domain": domain})
+    
+    # Apply nginx config via driver layer
+    try:
+        from atulya_launch.drivers import get_platform_driver
+        driver = get_platform_driver(dry_run=False)
+        config_path = Path(site["nginx_config"])
+        if config_path.exists():
+            driver.web.apply_site(domain, config_path.read_text(encoding="utf-8"))
+            driver.web.reload()
+    except Exception as e:
+        # Log but don't fail site creation if driver fails
+        audit_event("site.create.driver_warning", "warning", {"domain": domain, "error": str(e)})
+    
     return site
 
 
@@ -362,11 +377,75 @@ def site_set_php_version(domain: str, php_version: str) -> dict[str, Any]:
     cfg["updated_at"] = datetime.utcnow().isoformat() + "Z"
     save_config(cfg)
     audit_event("site.php_version", "ok", {"domain": domain, "php_version": php_version})
+    
+    # Install PHP-FPM package, create pool, and apply nginx config via driver layer
+    try:
+        from atulya_launch.drivers import get_platform_driver
+        driver = get_platform_driver(dry_run=False)
+        
+        # Install PHP-FPM package
+        php_fpm_install(domain, php_version)
+        
+        # Create FPM pool config for this site
+        php_fpm_pool_create(domain, php_version)
+        
+        # Apply nginx config
+        config_path = Path(site["nginx_config"])
+        if config_path.exists():
+            driver.web.apply_site(domain, config_path.read_text(encoding="utf-8"))
+            driver.web.reload()
+    except Exception as e:
+        audit_event("site.php_version.driver_warning", "warning", {"domain": domain, "error": str(e)})
+    
     return site
 
 
+def php_fpm_install(domain: str, version: str) -> dict[str, Any]:
+    """Install PHP-FPM package for a given version via the platform driver."""
+    pkg_name = f"php{version}-fpm"
+    try:
+        from atulya_launch.drivers import get_platform_driver
+        driver = get_platform_driver(dry_run=False)
+        result = driver.packages.install([pkg_name])
+        audit_event("php_fpm.install", "ok" if result.ok else "error", {"domain": domain, "version": version})
+        return {"ok": result.ok, "package": pkg_name, "message": result.message}
+    except Exception as e:
+        audit_event("php_fpm.install", "error", {"domain": domain, "version": version, "error": str(e)})
+        return {"ok": False, "error": str(e)}
+
+
+def php_fpm_pool_create(domain: str, version: str) -> dict[str, Any]:
+    """Create a PHP-FPM pool config file for a domain."""
+    try:
+        from atulya_launch.drivers import get_platform_driver
+        driver = get_platform_driver(dry_run=False)
+        result = driver.php_fpm.install_pool(domain, version)
+        if result.ok:
+            driver.php_fpm.reload(version)
+        audit_event("php_fpm.pool_create", "ok", {"domain": domain, "version": version})
+        return {"ok": result.ok, "files": result.files}
+    except Exception as e:
+        audit_event("php_fpm.pool_create", "error", {"domain": domain, "version": version, "error": str(e)})
+        return {"ok": False, "error": str(e)}
+
+
+def php_fpm_pool_remove(domain: str, version: str) -> dict[str, Any]:
+    """Remove a PHP-FPM pool config file for a domain."""
+    try:
+        from atulya_launch.drivers import get_platform_driver
+        driver = get_platform_driver(dry_run=False)
+        result = driver.php_fpm.remove_pool(domain, version)
+        if result.ok:
+            driver.php_fpm.reload(version)
+        audit_event("php_fpm.pool_remove", "ok", {"domain": domain, "version": version})
+        return {"ok": result.ok, "files": result.files}
+    except Exception as e:
+        audit_event("php_fpm.pool_remove", "error", {"domain": domain, "version": version, "error": str(e)})
+        return {"ok": False, "error": str(e)}
+
+
 def site_delete(domain: str) -> bool:
-    """Delete a site, removing its nginx config."""
+    """Delete a site, removing its nginx config and PHP-FPM pool."""
     domain = validate_domain(domain)
     cfg: dict[str, Any] = load_config()
     site: dict[str, Any] | None = cfg.get("sites", {}).pop(domain, None)
@@ -378,6 +457,25 @@ def site_delete(domain: str) -> bool:
     cfg["updated_at"] = datetime.utcnow().isoformat() + "Z"
     save_config(cfg)
     audit_event("site.delete", "ok", {"domain": domain})
+    
+    # Remove nginx config and PHP-FPM pool via driver layer
+    try:
+        from atulya_launch.drivers import get_platform_driver
+        driver = get_platform_driver(dry_run=False)
+        
+        # Remove nginx config
+        try:
+            driver.web.apply_site(domain, "")  # Empty config removes it
+            driver.web.reload()
+        except Exception:
+            driver.web.reload()
+        
+        # Remove PHP-FPM pool if PHP was enabled
+        if site.get("php") and site.get("php_version"):
+            php_fpm_pool_remove(domain, site["php_version"])
+    except Exception as e:
+        audit_event("site.delete.driver_warning", "warning", {"domain": domain, "error": str(e)})
+    
     return True
 
 
@@ -687,6 +785,11 @@ def get_platform() -> str:
     return sys.platform
 
 
+def is_linux() -> bool:
+    """Check if running on Linux."""
+    return sys.platform.startswith("linux")
+
+
 def get_arch() -> str:
     """Return the machine architecture."""
     machine: str = os.uname().machine if hasattr(os, "uname") else "x86_64"
@@ -982,28 +1085,60 @@ def nginx_apply_and_reload(domain: str) -> dict[str, Any]:
 
 def database_create(name: str, db_type: str = "mysql") -> dict[str, Any]:
     """Create a MySQL/PostgreSQL database on the host."""
-    if get_platform() != "linux":
-        return {"ok": False, "error": "database provisioning only supported on Linux"}
     if db_type in ("mysql", "mariadb"):
-        result: subprocess.CompletedProcess = run_cmd(["mysql", "-e", f"CREATE DATABASE IF NOT EXISTS `{name}`;"], check=False)
+        try:
+            import pymysql
+            conn = pymysql.connect(host="localhost", user="root", password="")
+            try:
+                with conn.cursor() as cursor:
+                    cursor.execute(f"CREATE DATABASE IF NOT EXISTS `{name}`")
+                conn.commit()
+            finally:
+                conn.close()
+            return {"ok": True, "name": name, "type": db_type}
+        except ImportError:
+            if get_platform() != "linux":
+                return {"ok": False, "error": "pymysql not installed and subprocess only works on Linux"}
+            result: subprocess.CompletedProcess = run_cmd(["mysql", "-e", f"CREATE DATABASE IF NOT EXISTS `{name}`;"], check=False)
+            return {"ok": result.returncode == 0, "name": name, "type": db_type}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
     elif db_type == "postgresql":
+        if get_platform() != "linux":
+            return {"ok": False, "error": "PostgreSQL only supported on Linux"}
         result = run_cmd(["sudo", "-u", "postgres", "createdb", name], check=False)
+        return {"ok": result.returncode == 0, "name": name, "type": db_type}
     else:
         return {"ok": False, "error": f"unsupported db type: {db_type}"}
-    return {"ok": result.returncode == 0, "name": name, "type": db_type}
 
 
 def database_drop(name: str, db_type: str = "mysql") -> dict[str, Any]:
     """Drop a MySQL/PostgreSQL database."""
-    if get_platform() != "linux":
-        return {"ok": False, "error": "database operations only supported on Linux"}
     if db_type in ("mysql", "mariadb"):
-        result: subprocess.CompletedProcess = run_cmd(["mysql", "-e", f"DROP DATABASE IF EXISTS `{name}`;"], check=False)
+        try:
+            import pymysql
+            conn = pymysql.connect(host="localhost", user="root", password="")
+            try:
+                with conn.cursor() as cursor:
+                    cursor.execute(f"DROP DATABASE IF EXISTS `{name}`")
+                conn.commit()
+            finally:
+                conn.close()
+            return {"ok": True, "name": name}
+        except ImportError:
+            if get_platform() != "linux":
+                return {"ok": False, "error": "pymysql not installed and subprocess only works on Linux"}
+            result: subprocess.CompletedProcess = run_cmd(["mysql", "-e", f"DROP DATABASE IF EXISTS `{name}`;"], check=False)
+            return {"ok": result.returncode == 0, "name": name}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
     elif db_type == "postgresql":
+        if get_platform() != "linux":
+            return {"ok": False, "error": "PostgreSQL only supported on Linux"}
         result = run_cmd(["sudo", "-u", "postgres", "dropdb", name], check=False)
+        return {"ok": result.returncode == 0, "name": name}
     else:
         return {"ok": False, "error": f"unsupported db type: {db_type}"}
-    return {"ok": result.returncode == 0, "name": name}
 
 
 def database_backup(name: str, db_type: str = "mysql") -> dict[str, Any]:
@@ -1011,19 +1146,54 @@ def database_backup(name: str, db_type: str = "mysql") -> dict[str, Any]:
     ensure_dirs()
     stamp: str = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     backup_path: Path = BACKUPS_DIR / f"db-{name}-{stamp}.sql.gz"
-    if get_platform() != "linux":
-        return {"ok": False, "error": "database backup only supported on Linux"}
     import gzip
     if db_type in ("mysql", "mariadb"):
-        result: subprocess.CompletedProcess = run_cmd(["mysqldump", "--single-transaction", name], check=False)
+        try:
+            import pymysql
+            conn = pymysql.connect(host="localhost", user="root", password="", db=name)
+            try:
+                with conn.cursor() as cursor:
+                    cursor.execute("SHOW TABLES")
+                    tables = [row[0] for row in cursor.fetchall()]
+                sql_dump = f"-- MySQL dump for {name}\n\n"
+                for table in tables:
+                    with conn.cursor() as cursor:
+                        cursor.execute(f"SHOW CREATE TABLE `{table}`")
+                        create_sql = cursor.fetchone()[1]
+                    sql_dump += f"DROP TABLE IF EXISTS `{table}`;\n{create_sql};\n\n"
+                    with conn.cursor() as cursor:
+                        cursor.execute(f"SELECT * FROM `{table}`")
+                        rows = cursor.fetchall()
+                        cursor.execute(f"SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = '{name}' AND TABLE_NAME = '{table}' ORDER BY ORDINAL_POSITION")
+                        columns = [col[0] for col in cursor.fetchall()]
+                    for row in rows:
+                        values = ", ".join(f"'{str(v).replace(chr(39), chr(39)*2)}'" if v is not None else "NULL" for v in row)
+                        sql_dump += f"INSERT INTO `{table}` ({', '.join(f'`{c}`' for c in columns)}) VALUES ({values});\n"
+                    sql_dump += "\n"
+            finally:
+                conn.close()
+            with gzip.open(backup_path, "wt", encoding="utf-8") as f:
+                f.write(sql_dump)
+        except ImportError:
+            if get_platform() != "linux":
+                return {"ok": False, "error": "pymysql not installed and mysqldump only works on Linux"}
+            result: subprocess.CompletedProcess = run_cmd(["mysqldump", "--single-transaction", name], check=False)
+            if result.returncode != 0:
+                return {"ok": False, "error": result.stderr}
+            with gzip.open(backup_path, "wt", encoding="utf-8") as f:
+                f.write(result.stdout)
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
     elif db_type == "postgresql":
+        if get_platform() != "linux":
+            return {"ok": False, "error": "PostgreSQL backup only supported on Linux"}
         result = run_cmd(["sudo", "-u", "postgres", "pg_dump", name], check=False)
+        if result.returncode != 0:
+            return {"ok": False, "error": result.stderr}
+        with gzip.open(backup_path, "wt", encoding="utf-8") as f:
+            f.write(result.stdout)
     else:
         return {"ok": False, "error": f"unsupported db type: {db_type}"}
-    if result.returncode != 0:
-        return {"ok": False, "error": result.stderr}
-    with gzip.open(backup_path, "wt", encoding="utf-8") as f:
-        f.write(result.stdout)
     audit_event("database.backup", "ok", {"name": name, "path": str(backup_path)})
     return {"ok": True, "name": name, "path": str(backup_path), "size": backup_path.stat().st_size}
 

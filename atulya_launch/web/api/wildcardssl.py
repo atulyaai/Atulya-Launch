@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from atulya_launch import utils
 from atulya_launch.web.auth import get_current_user
 
-router = APIRouter(prefix="/api/ssl/wildcard", tags=["ssl-wildcard"])
+router = APIRouter(prefix="/api/ssl/wildcard-legacy", tags=["ssl-wildcard-legacy"])
 
 WILDCARD_CERTS_FILE = utils.CONFIG_DIR / "wildcard_ssl.json"
 

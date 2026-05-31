@@ -1,16 +1,18 @@
 """NGINX FastCGI / proxy cache management API."""
 
+import json
 import datetime
+from pathlib import Path
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from atulya_launch import utils
 from atulya_launch.web.auth import get_current_user
+from atulya_launch.web.database import connect
 
 router = APIRouter(prefix="/api/nginx/cache", tags=["nginx-cache"])
 
-NGINX_CACHE_FILE = utils.CONFIG_DIR / "nginx_cache.json"
 CACHE_PATH = "/var/cache/nginx"
 
 
@@ -23,20 +25,24 @@ class CacheConfig(BaseModel):
 
 
 def _load_cache_conf() -> dict:
-    if NGINX_CACHE_FILE.exists():
-        import json
-        return json.loads(NGINX_CACHE_FILE.read_text())
-    return {"enabled": False, "config": {}, "purge_history": []}
+    with connect() as conn:
+        rows = conn.execute("SELECT key, value FROM nginx_cache_config").fetchall()
+    config = {}
+    for r in rows:
+        try:
+            config[r["key"]] = json.loads(r["value"])
+        except (json.JSONDecodeError, TypeError):
+            config[r["key"]] = r["value"]
+    return config
 
 
 def _save_cache_conf(data: dict):
-    NGINX_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    import json
-    NGINX_CACHE_FILE.write_text(json.dumps(data, indent=2))
-
-
-def _nginx_conf_path() -> str:
-    return "/etc/nginx/nginx.conf"
+    with connect() as conn:
+        for key, value in data.items():
+            conn.execute(
+                "INSERT OR REPLACE INTO nginx_cache_config (key, value) VALUES (?, ?)",
+                (key, json.dumps(value)),
+            )
 
 
 def _cache_conf_snippet() -> str:
@@ -91,11 +97,11 @@ def enable_cache(body: CacheConfig, user: dict = Depends(get_current_user)):
     Path(body.path).mkdir(parents=True, exist_ok=True)
     utils.run_command(["nginx", "-t"], check=False)
     utils.service_action("reload", "nginx")
-    data = _load_cache_conf()
-    data["enabled"] = True
-    data["config"] = body.dict()
-    data["enabled_at"] = datetime.datetime.now().isoformat()
-    _save_cache_conf(data)
+    _save_cache_conf({
+        "enabled": True,
+        "config": body.model_dump(),
+        "enabled_at": datetime.datetime.now().isoformat(),
+    })
     return {"status": "enabled", "path": body.path}
 
 
@@ -106,9 +112,7 @@ def disable_cache(user: dict = Depends(get_current_user)):
         snippet.unlink()
     utils.run_command(["nginx", "-t"], check=False)
     utils.service_action("reload", "nginx")
-    data = _load_cache_conf()
-    data["enabled"] = False
-    _save_cache_conf(data)
+    _save_cache_conf({"enabled": False})
     return {"status": "disabled"}
 
 
@@ -124,12 +128,13 @@ def purge_domain_cache(domain: str, user: dict = Depends(get_current_user)):
                 f.unlink()
                 purged += 1
     data = _load_cache_conf()
-    data.setdefault("purge_history", []).append({
+    history = data.get("purge_history", [])
+    history.append({
         "domain": domain,
         "files_purged": purged,
         "timestamp": datetime.datetime.now().isoformat(),
     })
-    _save_cache_conf(data)
+    _save_cache_conf({"purge_history": history[-100:]})
     return {"status": "purged", "domain": domain, "files_purged": purged}
 
 
@@ -155,6 +160,3 @@ def cache_stats(user: dict = Depends(get_current_user)):
         "purge_history": purge_history[-20:],
         "enabled": data.get("enabled", False),
     }
-
-
-from pathlib import Path

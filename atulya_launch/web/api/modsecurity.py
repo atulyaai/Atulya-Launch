@@ -1,17 +1,17 @@
 """ModSecurity WAF management API."""
 
+import json
 import datetime
-import uuid
+from pathlib import Path
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from atulya_launch import utils
 from atulya_launch.web.auth import get_current_user
+from atulya_launch.web.database import connect
 
 router = APIRouter(prefix="/api/waf", tags=["waf"])
-
-WAF_FILE = utils.CONFIG_DIR / "modsecurity.json"
 
 MODSEC_CONF = "/etc/modsecurity/modsecurity.conf"
 MODSEC_RULES_DIR = "/etc/modsecurity/rules"
@@ -27,17 +27,25 @@ class CustomRuleCreate(BaseModel):
     enabled: bool = True
 
 
-def _load_waf() -> dict:
-    if WAF_FILE.exists():
-        import json
-        return json.loads(WAF_FILE.read_text())
-    return {"enabled": False, "rules_loaded": 0, "custom_rules": {}}
+def _load_waf_config() -> dict:
+    with connect() as conn:
+        rows = conn.execute("SELECT key, value FROM waf_config").fetchall()
+    config = {}
+    for r in rows:
+        try:
+            config[r["key"]] = json.loads(r["value"])
+        except (json.JSONDecodeError, TypeError):
+            config[r["key"]] = r["value"]
+    return config
 
 
-def _save_waf(data: dict):
-    WAF_FILE.parent.mkdir(parents=True, exist_ok=True)
-    import json
-    WAF_FILE.write_text(json.dumps(data, indent=2))
+def _save_waf_config(data: dict):
+    with connect() as conn:
+        for key, value in data.items():
+            conn.execute(
+                "INSERT OR REPLACE INTO waf_config (key, value) VALUES (?, ?)",
+                (key, json.dumps(value)),
+            )
 
 
 def _modsec_installed() -> bool:
@@ -60,15 +68,17 @@ def _nginx_modsec_conf() -> str:
 
 @router.get("/status")
 def get_status(user: dict = Depends(get_current_user)):
-    data = _load_waf()
+    config = _load_waf_config()
     installed = _modsec_installed()
     nginx_enabled = _modsec_enabled_in_nginx()
+    with connect() as conn:
+        rules_count = conn.execute("SELECT COUNT(*) as c FROM waf_custom_rules").fetchone()["c"]
     return {
         "installed": installed,
-        "enabled": data.get("enabled", False),
+        "enabled": config.get("enabled", False),
         "nginx_module": nginx_enabled,
-        "rules_loaded": data.get("rules_loaded", 0),
-        "custom_rules_count": len(data.get("custom_rules", {})),
+        "rules_loaded": rules_count,
+        "custom_rules_count": rules_count,
     }
 
 
@@ -88,9 +98,7 @@ def enable_waf(user: dict = Depends(get_current_user)):
     modsec_dir.mkdir(parents=True, exist_ok=True)
     (modsec_dir / "main.conf").write_text("Include /etc/modsecurity/modsecurity.conf\nInclude /etc/modsecurity/rules/*.conf\n")
     utils.service_action("reload", "nginx")
-    data = _load_waf()
-    data["enabled"] = True
-    _save_waf(data)
+    _save_waf_config({"enabled": True})
     return {"status": "enabled"}
 
 
@@ -105,16 +113,19 @@ def disable_waf(user: dict = Depends(get_current_user)):
             content = content.replace("SecRuleEngine On", "SecRuleEngine Off")
             conf_path.write_text(content)
     utils.service_action("reload", "nginx")
-    data = _load_waf()
-    data["enabled"] = False
-    _save_waf(data)
+    _save_waf_config({"enabled": False})
     return {"status": "disabled"}
 
 
 @router.get("/rules")
 def list_rules(user: dict = Depends(get_current_user)):
-    data = _load_waf()
-    rules = data.get("custom_rules", {})
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT rule_id, rule_name, pattern, action, phase, severity, description, enabled, created_at FROM waf_custom_rules",
+        ).fetchall()
+    rules = {r["rule_id"]: dict(r) for r in rows}
+    for v in rules.values():
+        v["enabled"] = bool(v["enabled"])
     builtin_count = 0
     rules_dir = Path(MODSEC_RULES_DIR)
     if rules_dir.exists():
@@ -124,6 +135,7 @@ def list_rules(user: dict = Depends(get_current_user)):
 
 @router.post("/rules")
 def add_rule(body: CustomRuleCreate, user: dict = Depends(get_current_user)):
+    import uuid
     rule_id = str(uuid.uuid4())[:8]
     rule_content = (
         f"SecRule {body.pattern} \"{body.action},id:{rule_id},"
@@ -134,33 +146,26 @@ def add_rule(body: CustomRuleCreate, user: dict = Depends(get_current_user)):
     rules_dir.mkdir(parents=True, exist_ok=True)
     custom_file = rules_dir / f"custom-{rule_id}.conf"
     custom_file.write_text(rule_content)
-    data = _load_waf()
-    data.setdefault("custom_rules", {})[rule_id] = {
-        "id": rule_id,
-        "rule_name": body.rule_name,
-        "pattern": body.pattern,
-        "action": body.action,
-        "phase": body.phase,
-        "severity": body.severity,
-        "description": body.description,
-        "enabled": body.enabled,
-        "created_at": datetime.datetime.now().isoformat(),
-    }
-    data["rules_loaded"] = len(data["custom_rules"])
-    _save_waf(data)
+    now = datetime.datetime.now().isoformat()
+    with connect() as conn:
+        conn.execute(
+            """INSERT INTO waf_custom_rules
+               (rule_id, rule_name, pattern, action, phase, severity, description, enabled, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (rule_id, body.rule_name, body.pattern, body.action, body.phase,
+             body.severity, body.description or "", 1 if body.enabled else 0, now),
+        )
     utils.service_action("reload", "nginx")
     return {"status": "created", "rule_id": rule_id}
 
 
 @router.delete("/rules/{rule_id}")
 def delete_rule(rule_id: str, user: dict = Depends(get_current_user)):
-    data = _load_waf()
-    rules = data.get("custom_rules", {})
-    if rule_id not in rules:
-        raise HTTPException(status_code=404, detail="Rule not found")
-    del rules[rule_id]
-    data["rules_loaded"] = len(rules)
-    _save_waf(data)
+    with connect() as conn:
+        row = conn.execute("SELECT rule_id FROM waf_custom_rules WHERE rule_id = ?", (rule_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Rule not found")
+        conn.execute("DELETE FROM waf_custom_rules WHERE rule_id = ?", (rule_id,))
     custom_file = Path(MODSEC_RULES_DIR) / f"custom-{rule_id}.conf"
     if custom_file.exists():
         custom_file.unlink()

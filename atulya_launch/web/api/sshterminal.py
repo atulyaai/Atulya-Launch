@@ -1,8 +1,9 @@
-"""In-browser SSH terminal API — session management and WebSocket."""
+"""In-browser SSH terminal API — asyncssh backend with WebSocket pty."""
 
 import asyncio
 import datetime
 import uuid
+import json
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
@@ -13,6 +14,8 @@ from atulya_launch.web.auth import get_current_user
 router = APIRouter(tags=["ssh-terminal"])
 
 SESSIONS_FILE = utils.CONFIG_DIR / "ssh_sessions.json"
+
+_active_connections: dict[str, any] = {}
 
 
 class SSHConnectRequest(BaseModel):
@@ -30,20 +33,18 @@ class SSHExecRequest(BaseModel):
 
 def _load_sessions() -> dict:
     if SESSIONS_FILE.exists():
-        import json
         return json.loads(SESSIONS_FILE.read_text())
     return {"sessions": {}}
 
 
 def _save_sessions(data: dict):
     SESSIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    import json
     SESSIONS_FILE.write_text(json.dumps(data, indent=2))
 
 
-def _paramiko_available() -> bool:
+def _has_asyncssh() -> bool:
     try:
-        import paramiko
+        import asyncssh
         return True
     except ImportError:
         return False
@@ -58,6 +59,8 @@ def ssh_connect(body: SSHConnectRequest, user: dict = Depends(get_current_user))
         "host": body.host,
         "port": body.port,
         "username": body.username,
+        "password": body.password,
+        "key_path": body.key_path,
         "status": "connected",
         "created_at": datetime.datetime.now().isoformat(),
         "user": user.get("sub", "admin"),
@@ -73,7 +76,7 @@ def ssh_exec(body: SSHExecRequest, user: dict = Depends(get_current_user)):
     if body.session_id not in sessions:
         raise HTTPException(status_code=404, detail="Session not found")
     session = sessions[body.session_id]
-    if not _paramiko_available():
+    if not _has_asyncssh():
         import subprocess
         try:
             result = subprocess.run(
@@ -89,28 +92,31 @@ def ssh_exec(body: SSHExecRequest, user: dict = Depends(get_current_user)):
         except subprocess.TimeoutExpired:
             raise HTTPException(status_code=504, detail="Command timed out")
     try:
-        import paramiko
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        connect_kwargs = {
-            "hostname": session["host"],
-            "port": session.get("port", 22),
-            "username": session["username"],
-            "timeout": 10,
-        }
-        if session.get("key_path"):
-            connect_kwargs["key_filename"] = session["key_path"]
-        client.connect(**connect_kwargs)
-        _, stdout, stderr = client.exec_command(body.command, timeout=60)
-        stdout_str = stdout.read().decode()
-        stderr_str = stderr.read().decode()
-        client.close()
-        return {
-            "session_id": body.session_id,
-            "command": body.command,
-            "stdout": stdout_str,
-            "stderr": stderr_str,
-        }
+        import asyncssh
+        loop = asyncio.new_event_loop()
+        try:
+            async def _run():
+                conn = await asyncssh.connect(
+                    session["host"],
+                    port=session.get("port", 22),
+                    username=session["username"],
+                    password=session.get("password"),
+                    client_keys=[session["key_path"]] if session.get("key_path") else None,
+                    known_hosts=None,
+                )
+                result = await conn.run(body.command, timeout=60)
+                conn.close()
+                return result.stdout, result.stderr, result.exit_status
+            stdout, stderr, exit_code = loop.run_until_complete(_run())
+            return {
+                "session_id": body.session_id,
+                "command": body.command,
+                "stdout": stdout,
+                "stderr": stderr,
+                "returncode": exit_code,
+            }
+        finally:
+            loop.close()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"SSH exec failed: {str(e)}")
 
@@ -129,6 +135,12 @@ def close_session(session_id: str, user: dict = Depends(get_current_user)):
     sessions = data.get("sessions", {})
     if session_id not in sessions:
         raise HTTPException(status_code=404, detail="Session not found")
+    conn = _active_connections.pop(session_id, None)
+    if conn:
+        try:
+            conn.close()
+        except Exception:
+            pass
     del sessions[session_id]
     _save_sessions(data)
     return {"status": "closed", "session_id": session_id}
@@ -144,37 +156,115 @@ async def ssh_websocket(websocket: WebSocket):
         await websocket.send_json({"error": "Invalid session"})
         await websocket.close()
         return
+
+    if _has_asyncssh():
+        await _handle_asyncssh_websocket(websocket, session_id, session)
+    else:
+        await _handle_fallback_websocket(websocket, session)
+
+
+async def _handle_asyncssh_websocket(websocket: WebSocket, session_id: str, session: dict):
+    """Handle SSH WebSocket with asyncssh for proper pty support."""
+    try:
+        import asyncssh
+    except ImportError:
+        await websocket.send_json({"error": "asyncssh not installed"})
+        await websocket.close()
+        return
+
+    conn = None
+    chan = None
+    try:
+        conn = await asyncssh.connect(
+            session["host"],
+            port=session.get("port", 22),
+            username=session["username"],
+            password=session.get("password"),
+            client_keys=[session["key_path"]] if session.get("key_path") else None,
+            known_hosts=None,
+        )
+        _active_connections[session_id] = conn
+
+        chan, _, _ = await conn.open_session(term_type="xterm-256color", term_size=(24, 80))
+        await websocket.send_json({"status": "connected", "session_id": session_id})
+
+        async def read_from_ssh():
+            try:
+                while True:
+                    data = await chan.read(65536)
+                    if not data:
+                        break
+                    await websocket.send_text(data)
+            except Exception:
+                pass
+
+        reader_task = asyncio.create_task(read_from_ssh())
+
+        try:
+            while True:
+                msg = await websocket.receive_text()
+                try:
+                    cmd = json.loads(msg)
+                    if cmd.get("type") == "resize":
+                        await chan.resize(cmd.get("rows", 24), cmd.get("cols", 80))
+                    elif cmd.get("type") == "input":
+                        chan.write(cmd.get("data", ""))
+                except (json.JSONDecodeError, ValueError):
+                    chan.write(msg)
+        except WebSocketDisconnect:
+            pass
+        finally:
+            reader_task.cancel()
+            try:
+                await reader_task
+            except asyncio.CancelledError:
+                pass
+    except Exception as e:
+        try:
+            await websocket.send_json({"error": str(e)})
+        except Exception:
+            pass
+    finally:
+        if chan:
+            try:
+                chan.close()
+            except Exception:
+                pass
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+        _active_connections.pop(session_id, None)
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+
+
+async def _handle_fallback_websocket(websocket: WebSocket, session: dict):
+    """Fallback: local shell exec per command (no interactive pty)."""
+    import subprocess
     try:
         while True:
             msg = await websocket.receive_text()
             if msg.strip() == "exit":
                 break
-            if _paramiko_available():
-                import paramiko
-                client = paramiko.SSHClient()
-                client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-                connect_kwargs = {
-                    "hostname": session["host"],
-                    "port": session.get("port", 22),
-                    "username": session["username"],
-                    "timeout": 10,
-                }
-                if session.get("key_path"):
-                    connect_kwargs["key_filename"] = session["key_path"]
-                client.connect(**connect_kwargs)
-                _, stdout, stderr = client.exec_command(msg, timeout=60)
-                output = stdout.read().decode() or stderr.read().decode()
-                client.close()
-                await websocket.send_text(output)
-            else:
-                import subprocess
-                result = subprocess.run(msg, shell=True, capture_output=True, text=True, timeout=60)
+            try:
+                result = subprocess.run(
+                    msg, shell=True, capture_output=True, text=True, timeout=60
+                )
                 output = result.stdout or result.stderr
                 await websocket.send_text(output)
+            except subprocess.TimeoutExpired:
+                await websocket.send_text("ERROR: Command timed out after 60s\n")
     except WebSocketDisconnect:
         pass
     except Exception as e:
-        await websocket.send_json({"error": str(e)})
+        try:
+            await websocket.send_json({"error": str(e)})
+        except Exception:
+            pass
     finally:
         try:
             await websocket.close()

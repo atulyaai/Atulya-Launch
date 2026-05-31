@@ -1,16 +1,15 @@
 """Bandwidth limiting API for sites."""
 
 import datetime
-from typing import Optional
+from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from atulya_launch import utils
 from atulya_launch.web.auth import get_current_user
+from atulya_launch.web.database import connect
 
 router = APIRouter(prefix="/api/sites/{domain}/bandwidth-limit", tags=["bandwidth"])
-
-BANDWIDTH_FILE = utils.CONFIG_DIR / "bandwidth.json"
 
 
 class BandwidthConfig(BaseModel):
@@ -20,39 +19,6 @@ class BandwidthConfig(BaseModel):
     block_on_exceed: bool = False
     current_usage_bytes: int = 0
     reset_day: int = 1
-
-
-def _load_bandwidth() -> dict:
-    if BANDWIDTH_FILE.exists():
-        import json
-        return json.loads(BANDWIDTH_FILE.read_text())
-    return {"domains": {}}
-
-
-def _save_bandwidth(data: dict):
-    BANDWIDTH_FILE.parent.mkdir(parents=True, exist_ok=True)
-    import json
-    BANDWIDTH_FILE.write_text(json.dumps(data, indent=2))
-
-
-def _get_nginx_bandwidth_stats(domain: str) -> dict:
-    awk_pattern = f"/server_name.*{domain}/,/^}}/"
-    result = utils.run_command(
-        ["awk", awk_pattern, "/var/log/nginx/access.log"],
-        check=False,
-    )
-    total_bytes = 0
-    request_count = 0
-    if result and result.returncode == 0:
-        for line in result.stdout.splitlines():
-            parts = line.split()
-            if len(parts) >= 10:
-                try:
-                    total_bytes += int(parts[9]) if parts[9] != "-" else 0
-                    request_count += 1
-                except (ValueError, IndexError):
-                    pass
-    return {"bytes": total_bytes, "requests": request_count}
 
 
 def _generate_nginx_limit(zone_name: str, limit_mbps: int) -> str:
@@ -73,15 +39,22 @@ def _bytes_to_human(b: int) -> str:
 
 @router.get("")
 def get_bandwidth(domain: str, user: dict = Depends(get_current_user)):
-    data = _load_bandwidth()
-    config = data.get("domains", {}).get(domain, {
-        "monthly_limit_gb": 100.0,
-        "alert_threshold_percent": 80.0,
-        "enabled": False,
-        "block_on_exceed": False,
-        "current_usage_bytes": 0,
-        "reset_day": 1,
-    })
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT monthly_limit_gb, alert_threshold_percent, enabled, block_on_exceed, current_usage_bytes, reset_day FROM bandwidth_config WHERE domain = ?",
+            (domain,),
+        ).fetchone()
+    if row:
+        config = dict(row)
+    else:
+        config = {
+            "monthly_limit_gb": 100.0,
+            "alert_threshold_percent": 80.0,
+            "enabled": False,
+            "block_on_exceed": False,
+            "current_usage_bytes": 0,
+            "reset_day": 1,
+        }
     usage_pct = 0
     limit_bytes = config.get("monthly_limit_gb", 100) * (1024 ** 3)
     if limit_bytes > 0:
@@ -91,9 +64,9 @@ def get_bandwidth(domain: str, user: dict = Depends(get_current_user)):
         "bandwidth": {
             **config,
             "usage_percent": usage_pct,
-            "limit_human": _bytes_to_human(limit_bytes),
+            "limit_human": _bytes_to_human(int(limit_bytes)),
             "usage_human": _bytes_to_human(config.get("current_usage_bytes", 0)),
-            "remaining_human": _bytes_to_human(max(0, limit_bytes - config.get("current_usage_bytes", 0))),
+            "remaining_human": _bytes_to_human(max(0, int(limit_bytes) - config.get("current_usage_bytes", 0))),
         },
     }
 
@@ -102,18 +75,20 @@ def get_bandwidth(domain: str, user: dict = Depends(get_current_user)):
 def set_bandwidth(domain: str, body: BandwidthConfig, user: dict = Depends(get_current_user)):
     if body.monthly_limit_gb <= 0:
         raise HTTPException(status_code=400, detail="monthly_limit_gb must be positive")
-    data = _load_bandwidth()
-    existing = data.get("domains", {}).get(domain, {})
-    data.setdefault("domains", {})[domain] = {
-        "monthly_limit_gb": body.monthly_limit_gb,
-        "alert_threshold_percent": body.alert_threshold_percent,
-        "enabled": body.enabled,
-        "block_on_exceed": body.block_on_exceed,
-        "current_usage_bytes": existing.get("current_usage_bytes", 0),
-        "reset_day": body.reset_day,
-        "updated_at": datetime.datetime.now().isoformat(),
-    }
-    _save_bandwidth(data)
+    now = datetime.datetime.now().isoformat()
+    with connect() as conn:
+        existing = conn.execute(
+            "SELECT current_usage_bytes FROM bandwidth_config WHERE domain = ?", (domain,),
+        ).fetchone()
+        current_usage = existing["current_usage_bytes"] if existing else 0
+        conn.execute(
+            """INSERT OR REPLACE INTO bandwidth_config
+               (domain, monthly_limit_gb, alert_threshold_percent, enabled, block_on_exceed, current_usage_bytes, reset_day, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (domain, body.monthly_limit_gb, body.alert_threshold_percent,
+             1 if body.enabled else 0, 1 if body.block_on_exceed else 0,
+             current_usage, body.reset_day, now),
+        )
     if utils.is_linux():
         zone_name = domain.replace(".", "_")
         limit_mbps = int(body.monthly_limit_gb * 1024 * 8 / (30 * 86400))
@@ -131,13 +106,12 @@ def set_bandwidth(domain: str, body: BandwidthConfig, user: dict = Depends(get_c
 
 @router.post("/reset")
 def reset_usage(domain: str, user: dict = Depends(get_current_user)):
-    data = _load_bandwidth()
-    if domain not in data.get("domains", {}):
-        raise HTTPException(status_code=404, detail="Domain not configured")
-    data["domains"][domain]["current_usage_bytes"] = 0
-    data["domains"][domain]["reset_at"] = datetime.datetime.now().isoformat()
-    _save_bandwidth(data)
+    with connect() as conn:
+        row = conn.execute("SELECT domain FROM bandwidth_config WHERE domain = ?", (domain,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Domain not configured")
+        conn.execute(
+            "UPDATE bandwidth_config SET current_usage_bytes = 0 WHERE domain = ?",
+            (domain,),
+        )
     return {"status": "reset", "domain": domain}
-
-
-from pathlib import Path

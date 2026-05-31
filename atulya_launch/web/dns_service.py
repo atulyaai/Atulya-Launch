@@ -62,13 +62,15 @@ def create_zone(domain: str, nameservers: list[str] | None = None) -> dict[str, 
 
 
 def delete_zone(domain: str) -> bool:
-    """Delete a DNS zone and cascading records."""
+    """Delete a DNS zone and remove it from the platform DNS driver."""
     with connect() as conn:
         row = conn.execute("SELECT id FROM dns_zones WHERE domain = ?", (domain,)).fetchone()
         if not row:
             return False
         conn.execute("DELETE FROM dns_zones WHERE id = ?", (row["id"],))
-        return True
+    driver = get_platform_driver(dry_run=_driver_dry_run())
+    driver.dns.delete_zone(domain)
+    return True
 
 
 def get_zone(domain: str) -> dict[str, Any]:

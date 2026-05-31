@@ -12,8 +12,6 @@ router = APIRouter(prefix="/api/ssl", tags=["ssl"])
 
 class IssueRequest(BaseModel):
     domain: str
-    email: str
-    use_staging: bool = False
 
 
 class InstallRequest(BaseModel):
@@ -30,7 +28,7 @@ def list_certificates(user: dict = Depends(get_current_user)):
 
 @router.post("/issue")
 def issue_certificate(body: IssueRequest, user: dict = Depends(get_current_user)):
-    result = core.ssl_issue(body.domain, body.email, use_staging=body.use_staging)
+    result = core.ssl_issue_letsencrypt(body.domain)
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
     return {"certificate": result}
@@ -41,7 +39,7 @@ def renew_certificate(domain: str, user: dict = Depends(get_current_user)):
     certs = core.ssl_list()
     if domain not in certs:
         raise HTTPException(status_code=404, detail="Certificate not found")
-    result = core.ssl_renew()
+    result = core.ssl_renew(domain)
     if result.get("status") == "failed":
         raise HTTPException(status_code=500, detail="Renewal failed")
     return result
@@ -55,27 +53,41 @@ def install_certificate(body: InstallRequest, user: dict = Depends(get_current_u
     (cert_dir / "privkey.pem").write_text(body.key)
     if body.chain:
         (cert_dir / "chain.pem").write_text(body.chain)
-    ssl_data = {
-        "domain": body.domain,
-        "cert_path": str(cert_dir / "fullchain.pem"),
-        "key_path": str(cert_dir / "privkey.pem"),
-        "installed_manually": True,
-    }
-    ssl_config = utils.load_config().get("ssl", {})
-    ssl_config[body.domain] = ssl_data
-    all_config = utils.load_config()
-    all_config["ssl"] = ssl_config
-    utils.save_config(all_config)
+    from atulya_launch.web.database import connect
+    conn = connect()
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO ssl_certs (domain, cert_path, key_path, issuer, expires_at, auto_renew) VALUES (?, ?, ?, ?, ?, ?)",
+            (body.domain, str(cert_dir / "fullchain.pem"), str(cert_dir / "privkey.pem"), "manual", None, 0),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    
+    # Apply SSL config via driver layer (for web servers that need certificate paths)
+    try:
+        from atulya_launch.drivers import get_platform_driver
+        driver = get_platform_driver(dry_run=False)
+        # For nginx, we might need to update the site config to point to these certs
+        # This would be site-specific, so we'll just note that certs are installed
+        # The actual SSL configuration in nginx/apache would be handled elsewhere
+        pass
+    except Exception:
+        pass
+    
     return {"status": "installed", "domain": body.domain}
 
 
 @router.delete("/{domain}")
 def delete_certificate(domain: str, user: dict = Depends(get_current_user)):
-    ssl_config = utils.load_config().get("ssl", {})
-    if domain not in ssl_config:
-        raise HTTPException(status_code=404, detail="Certificate not found")
-    del ssl_config[domain]
-    all_config = utils.load_config()
-    all_config["ssl"] = ssl_config
-    utils.save_config(all_config)
+    from atulya_launch.web.database import connect
+    conn = connect()
+    try:
+        row = conn.execute("SELECT domain FROM ssl_certs WHERE domain = ?", (domain,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Certificate not found")
+        conn.execute("DELETE FROM ssl_certs WHERE domain = ?", (domain,))
+        conn.commit()
+    finally:
+        conn.close()
     return {"status": "deleted", "domain": domain}

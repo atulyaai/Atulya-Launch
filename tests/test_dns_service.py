@@ -33,6 +33,7 @@ class TestDnsService(unittest.TestCase):
         self.assertTrue(apply["ok"])
         self.assertTrue(apply["dry_run"])
         self.assertIn("db.example.com", apply["files"][0])
+        self.assertTrue(any("named.conf.local" in path for path in apply["files"]))
 
     def test_dns_delete_zone(self) -> None:
         dns_service.create_zone("delete.example.com")

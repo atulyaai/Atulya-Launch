@@ -3,6 +3,7 @@
 import json
 import subprocess
 import shutil
+import sqlite3
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -12,24 +13,51 @@ from pydantic import BaseModel
 
 from atulya_launch import utils
 from atulya_launch.web.auth import get_current_user
+from atulya_launch.web.database import connect
 
 router = APIRouter(prefix="/api/ssl/wildcard", tags=["ssl-wildcard"])
 
-WILDCARD_CONFIG_FILE = utils.CONFIG_DIR / "wildcard_ssl.json"
-CERTBOT_DIR = utils.CONFIG_DIR / "certs" / "wildcard"
-
 
 def _load_wildcard_config() -> dict:
-    if WILDCARD_CONFIG_FILE.exists():
-        with open(WILDCARD_CONFIG_FILE, "r") as f:
-            return json.load(f) or {}
-    return {}
+    """Load wildcard certs from SQLite (migrating from JSON)."""
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT domain, data FROM ssl_wildcard"
+        ).fetchall()
+    result = {}
+    for row in rows:
+        try:
+            result[row["domain"]] = json.loads(row["data"])
+        except Exception:
+            pass
+    return result
 
 
 def _save_wildcard_config(data: dict):
-    utils.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    with open(WILDCARD_CONFIG_FILE, "w") as f:
-        json.dump(data, f, indent=2)
+    """Save wildcard certs to SQLite."""
+    with connect() as conn:
+        # Clear existing
+        conn.execute("DELETE FROM ssl_wildcard")
+        # Insert new
+        for domain, cert_data in data.items():
+            conn.execute(
+                "INSERT OR REPLACE INTO ssl_wildcard (domain, data, updated_at) VALUES (?, ?, ?)",
+                (domain, json.dumps(cert_data), datetime.utcnow().isoformat() + "Z"),
+            )
+        conn.commit()
+
+
+def _ensure_wildcard_table():
+    """Ensure the ssl_wildcard table exists."""
+    with connect() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS ssl_wildcard (
+                domain TEXT PRIMARY KEY,
+                data TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+        conn.commit()
 
 
 def _certbot_available() -> bool:
@@ -174,6 +202,7 @@ def issue_wildcard_cert(body: WildcardIssue, user: dict = Depends(get_current_us
         provider_config["credentials_file"] = body.google_credentials_file
 
     base_domain = body.domain.lstrip("*.") if body.domain.startswith("*.") else body.domain
+    _ensure_wildcard_table()
     result = _issue_wildcard_cert(
         domain=body.domain,
         dns_provider=body.dns_provider,
@@ -195,6 +224,7 @@ def issue_wildcard_cert(body: WildcardIssue, user: dict = Depends(get_current_us
 @router.post("/renew")
 def renew_wildcard_cert(body: WildcardRenew, user: dict = Depends(get_current_user)):
     base_domain = body.domain.lstrip("*.") if body.domain.startswith("*.") else body.domain
+    _ensure_wildcard_table()
     config = _load_wildcard_config()
     cert_info = config.get(base_domain)
     if not cert_info:
@@ -245,7 +275,6 @@ def install_wildcard_cert(domain: str, user: dict = Depends(get_current_user)):
     ssl_dir = utils.CONFIG_DIR / "ssl" / domain
     ssl_dir.mkdir(parents=True, exist_ok=True)
 
-    import shutil
     if cert_path and Path(cert_path).exists():
         shutil.copy2(cert_path, ssl_dir / "fullchain.pem")
     if key_path and Path(key_path).exists():

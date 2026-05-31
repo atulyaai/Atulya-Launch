@@ -12,7 +12,7 @@ from typing import Optional
 from atulya_launch import utils
 from atulya_launch.web.auth import get_current_user
 
-router = APIRouter(prefix="/api/webmail", tags=["webmail"])
+router = APIRouter(prefix="/api/plugins/webmail", tags=["webmail-plugin"])
 
 WEBMAIL_DIR = utils.CONFIG_DIR / "webmail"
 CONFIG_FILE = WEBMAIL_DIR / "config.json"

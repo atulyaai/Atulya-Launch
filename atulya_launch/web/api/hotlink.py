@@ -1,16 +1,17 @@
 """Hotlink protection API for sites."""
 
+import json
 import datetime
+from pathlib import Path
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from atulya_launch import utils
 from atulya_launch.web.auth import get_current_user
+from atulya_launch.web.database import connect
 
 router = APIRouter(prefix="/api/sites/{domain}/hotlink", tags=["hotlink"])
-
-HOTLINK_FILE = utils.CONFIG_DIR / "hotlink.json"
 
 
 class HotlinkConfig(BaseModel):
@@ -20,19 +21,6 @@ class HotlinkConfig(BaseModel):
     allow_direct: bool = True
     allow_empty_referrer: bool = False
     excluded_paths: List[str] = []
-
-
-def _load_hotlink() -> dict:
-    if HOTLINK_FILE.exists():
-        import json
-        return json.loads(HOTLINK_FILE.read_text())
-    return {"domains": {}}
-
-
-def _save_hotlink(data: dict):
-    HOTLINK_FILE.parent.mkdir(parents=True, exist_ok=True)
-    import json
-    HOTLINK_FILE.write_text(json.dumps(data, indent=2))
 
 
 def _generate_nginx_rules(domain: str, config: HotlinkConfig) -> str:
@@ -66,15 +54,21 @@ def _generate_nginx_rules(domain: str, config: HotlinkConfig) -> str:
 
 @router.get("")
 def get_hotlink(domain: str, user: dict = Depends(get_current_user)):
-    data = _load_hotlink()
-    config = data.get("domains", {}).get(domain, {
-        "enabled": False,
-        "allowed_referrers": [],
-        "block_action": "403",
-        "allow_direct": True,
-        "allow_empty_referrer": False,
-        "excluded_paths": [],
-    })
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT config_json, updated_at FROM hotlink_config WHERE domain = ?", (domain,),
+        ).fetchone()
+    if row:
+        config = json.loads(row["config_json"])
+    else:
+        config = {
+            "enabled": False,
+            "allowed_referrers": [],
+            "block_action": "403",
+            "allow_direct": True,
+            "allow_empty_referrer": False,
+            "excluded_paths": [],
+        }
     return {"domain": domain, "hotlink": config}
 
 
@@ -82,17 +76,20 @@ def get_hotlink(domain: str, user: dict = Depends(get_current_user)):
 def set_hotlink(domain: str, body: HotlinkConfig, user: dict = Depends(get_current_user)):
     if body.block_action not in ("403", "redirect", "drop"):
         raise HTTPException(status_code=400, detail="block_action must be one of: 403, redirect, drop")
-    data = _load_hotlink()
-    data.setdefault("domains", {})[domain] = {
+    config = {
         "enabled": body.enabled,
         "allowed_referrers": body.allowed_referrers,
         "block_action": body.block_action,
         "allow_direct": body.allow_direct,
         "allow_empty_referrer": body.allow_empty_referrer,
         "excluded_paths": body.excluded_paths,
-        "updated_at": datetime.datetime.now().isoformat(),
     }
-    _save_hotlink(data)
+    now = datetime.datetime.now().isoformat()
+    with connect() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO hotlink_config (domain, config_json, updated_at) VALUES (?, ?, ?)",
+            (domain, json.dumps(config), now),
+        )
     snippet_path = Path(f"/etc/nginx/snippets/hotlink-{domain}.conf")
     snippet_path.parent.mkdir(parents=True, exist_ok=True)
     if body.enabled:
@@ -103,6 +100,3 @@ def set_hotlink(domain: str, body: HotlinkConfig, user: dict = Depends(get_curre
         utils.run_command(["nginx", "-t"], check=False)
         utils.service_action("reload", "nginx")
     return {"status": "updated", "domain": domain, "enabled": body.enabled}
-
-
-from pathlib import Path

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .common import BindDnsDriver, FileWebServerDriver, PlannedMailDriver, PlannedPackageDriver, PlannedServiceDriver
+from .common import BindDnsDriver, FileWebServerDriver, PhpFpmDriver, PlannedMailDriver, PlannedPackageDriver, PlannedServiceDriver
 
 
 @dataclass(slots=True)
@@ -20,6 +20,7 @@ class MacOSDriver:
     web: FileWebServerDriver = field(init=False)
     dns: BindDnsDriver = field(init=False)
     mail: PlannedMailDriver = field(init=False)
+    php_fpm: PhpFpmDriver = field(init=False)
 
     def __post_init__(self) -> None:
         self.services = PlannedServiceDriver("launchd", dry_run=self.dry_run)
@@ -27,3 +28,4 @@ class MacOSDriver:
         self.web = FileWebServerDriver("caddy", Path("/usr/local/etc/caddy/sites"), self.services, self.dry_run)
         self.dns = BindDnsDriver(Path("/usr/local/etc/bind/zones"), self.services, self.dry_run)
         self.mail = PlannedMailDriver(Path("/usr/local/etc/postfix"), self.services, self.dry_run)
+        self.php_fpm = PhpFpmDriver(Path("/usr/local/etc/php"), self.services, self.dry_run)

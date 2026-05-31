@@ -1,5 +1,6 @@
 """Email alert rules API — CPU, disk, SSL, service, backup alerts."""
 
+import json
 import datetime
 import uuid
 from typing import Optional
@@ -8,10 +9,9 @@ from pydantic import BaseModel
 
 from atulya_launch import utils
 from atulya_launch.web.auth import get_current_user
+from atulya_launch.web.database import connect
 
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
-
-ALERTS_FILE = utils.CONFIG_DIR / "alerts.json"
 
 
 class AlertRuleCreate(BaseModel):
@@ -36,68 +36,105 @@ class AlertRuleUpdate(BaseModel):
 VALID_TYPES = {"high_cpu", "disk_full", "ssl_expiry", "service_down", "backup_failure"}
 
 
-def _load_alerts() -> dict:
-    if ALERTS_FILE.exists():
-        import json
-        return json.loads(ALERTS_FILE.read_text())
-    return {"rules": {}, "notification_email": "", "history": []}
+def _load_alert_config() -> dict:
+    with connect() as conn:
+        rows = conn.execute("SELECT key, value FROM alert_config").fetchall()
+    config = {}
+    for r in rows:
+        try:
+            config[r["key"]] = json.loads(r["value"])
+        except (json.JSONDecodeError, TypeError):
+            config[r["key"]] = r["value"]
+    return config
 
 
-def _save_alerts(data: dict):
-    ALERTS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    import json
-    ALERTS_FILE.write_text(json.dumps(data, indent=2))
+def _save_alert_config(data: dict):
+    with connect() as conn:
+        for key, value in data.items():
+            conn.execute(
+                "INSERT OR REPLACE INTO alert_config (key, value) VALUES (?, ?)",
+                (key, json.dumps(value)),
+            )
 
 
 @router.get("")
 def list_rules(user: dict = Depends(get_current_user)):
-    data = _load_alerts()
-    return {"rules": data.get("rules", {}), "notification_email": data.get("notification_email", "")}
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT id, name, alert_type, threshold, email, enabled, check_interval, extra_json, created_at, updated_at FROM alert_rules",
+        ).fetchall()
+    config = _load_alert_config()
+    rules = {}
+    for r in rows:
+        rule = dict(r)
+        rule["enabled"] = bool(rule["enabled"])
+        try:
+            rule["extra"] = json.loads(rule["extra_json"])
+        except (json.JSONDecodeError, TypeError):
+            rule["extra"] = {}
+        del rule["extra_json"]
+        rules[rule["id"]] = rule
+    return {"rules": rules, "notification_email": config.get("notification_email", "")}
 
 
 @router.post("")
 def create_rule(body: AlertRuleCreate, user: dict = Depends(get_current_user)):
     if body.alert_type not in VALID_TYPES:
         raise HTTPException(status_code=400, detail=f"Invalid alert_type. Must be one of: {', '.join(VALID_TYPES)}")
-    data = _load_alerts()
     rule_id = str(uuid.uuid4())[:8]
-    data.setdefault("rules", {})[rule_id] = {
-        "id": rule_id,
-        "name": body.name,
-        "alert_type": body.alert_type,
-        "threshold": body.threshold,
-        "email": body.email,
-        "enabled": body.enabled,
-        "check_interval": body.check_interval,
-        "extra": body.extra or {},
-        "created_at": datetime.datetime.now().isoformat(),
-    }
-    _save_alerts(data)
+    now = datetime.datetime.now().isoformat()
+    with connect() as conn:
+        conn.execute(
+            """INSERT INTO alert_rules (id, name, alert_type, threshold, email, enabled, check_interval, extra_json, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (rule_id, body.name, body.alert_type, body.threshold, body.email,
+             1 if body.enabled else 0, body.check_interval, json.dumps(body.extra or {}), now),
+        )
     return {"status": "created", "rule_id": rule_id}
 
 
 @router.put("/{rule_id}")
 def update_rule(rule_id: str, body: AlertRuleUpdate, user: dict = Depends(get_current_user)):
-    data = _load_alerts()
-    rules = data.get("rules", {})
-    if rule_id not in rules:
-        raise HTTPException(status_code=404, detail="Alert rule not found")
-    rule = rules[rule_id]
-    for field, value in body.dict(exclude_unset=True).items():
-        rule[field] = value
-    rule["updated_at"] = datetime.datetime.now().isoformat()
-    _save_alerts(data)
-    return {"status": "updated", "rule": rule}
+    with connect() as conn:
+        row = conn.execute("SELECT id FROM alert_rules WHERE id = ?", (rule_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Alert rule not found")
+        now = datetime.datetime.now().isoformat()
+        updates = []
+        params = []
+        if body.name is not None:
+            updates.append("name = ?")
+            params.append(body.name)
+        if body.threshold is not None:
+            updates.append("threshold = ?")
+            params.append(body.threshold)
+        if body.email is not None:
+            updates.append("email = ?")
+            params.append(body.email)
+        if body.enabled is not None:
+            updates.append("enabled = ?")
+            params.append(1 if body.enabled else 0)
+        if body.check_interval is not None:
+            updates.append("check_interval = ?")
+            params.append(body.check_interval)
+        if body.extra is not None:
+            updates.append("extra_json = ?")
+            params.append(json.dumps(body.extra))
+        if updates:
+            updates.append("updated_at = ?")
+            params.append(now)
+            params.append(rule_id)
+            conn.execute(f"UPDATE alert_rules SET {', '.join(updates)} WHERE id = ?", params)
+    return {"status": "updated", "rule_id": rule_id}
 
 
 @router.delete("/{rule_id}")
 def delete_rule(rule_id: str, user: dict = Depends(get_current_user)):
-    data = _load_alerts()
-    rules = data.get("rules", {})
-    if rule_id not in rules:
-        raise HTTPException(status_code=404, detail="Alert rule not found")
-    del rules[rule_id]
-    _save_alerts(data)
+    with connect() as conn:
+        row = conn.execute("SELECT id FROM alert_rules WHERE id = ?", (rule_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Alert rule not found")
+        conn.execute("DELETE FROM alert_rules WHERE id = ?", (rule_id,))
     return {"status": "deleted", "rule_id": rule_id}
 
 
@@ -106,32 +143,32 @@ def set_notification_email(body: dict, user: dict = Depends(get_current_user)):
     email = body.get("email", "")
     if not email:
         raise HTTPException(status_code=400, detail="Email required")
-    data = _load_alerts()
-    data["notification_email"] = email
-    _save_alerts(data)
+    _save_alert_config({"notification_email": email})
     return {"status": "updated", "notification_email": email}
 
 
 @router.get("/history")
 def alert_history(user: dict = Depends(get_current_user)):
-    data = _load_alerts()
-    return {"history": data.get("history", [])[-50:]}
+    config = _load_alert_config()
+    return {"history": config.get("history", [])[-50:]}
 
 
 @router.post("/check")
 def check_alerts(user: dict = Depends(get_current_user)):
-    data = _load_alerts()
     triggered = []
     try:
         status_data = _get_system_status()
     except Exception:
         return {"triggered": [], "error": "Could not retrieve system status"}
-    rules = data.get("rules", {})
-    for rule_id, rule in rules.items():
-        if not rule.get("enabled"):
-            continue
-        alert_type = rule.get("alert_type")
-        threshold = rule.get("threshold", 80)
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT id, name, alert_type, threshold, email, enabled FROM alert_rules WHERE enabled = 1",
+        ).fetchall()
+    config = _load_alert_config()
+    history = config.get("history", [])
+    for r in rows:
+        alert_type = r["alert_type"]
+        threshold = r["threshold"] or 80
         fired = False
         if alert_type == "high_cpu" and status_data.get("cpu_percent", 0) > threshold:
             fired = True
@@ -139,15 +176,15 @@ def check_alerts(user: dict = Depends(get_current_user)):
             fired = True
         if fired:
             entry = {
-                "rule_id": rule_id,
+                "rule_id": r["id"],
                 "alert_type": alert_type,
-                "message": f"{rule.get('name', alert_type)} triggered at {datetime.datetime.now().isoformat()}",
-                "email": rule.get("email", ""),
+                "message": f"{r['name']} triggered at {datetime.datetime.now().isoformat()}",
+                "email": r["email"],
                 "timestamp": datetime.datetime.now().isoformat(),
             }
-            data.setdefault("history", []).append(entry)
+            history.append(entry)
             triggered.append(entry)
-    _save_alerts(data)
+    _save_alert_config({"history": history[-500:]})
     return {"triggered": triggered, "checked_at": datetime.datetime.now().isoformat()}
 
 

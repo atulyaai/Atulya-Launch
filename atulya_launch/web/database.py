@@ -15,7 +15,7 @@ from typing import Any, Iterator
 _db_path: Path | None = None
 _initialized: bool = False
 
-SCHEMA_VERSION: int = 4
+SCHEMA_VERSION: int = 10
 
 SCHEMA: str = """
     CREATE TABLE IF NOT EXISTS schema_version (
@@ -28,7 +28,9 @@ SCHEMA: str = """
         password_hash TEXT NOT NULL,
         role TEXT NOT NULL DEFAULT 'admin',
         created_at TEXT NOT NULL,
-        last_login TEXT
+        last_login TEXT,
+        must_change_password INTEGER NOT NULL DEFAULT 0,
+        parent_user_id INTEGER
     );
     CREATE TABLE IF NOT EXISTS sessions (
         token TEXT PRIMARY KEY,
@@ -187,6 +189,261 @@ SCHEMA: str = """
         message TEXT NOT NULL,
         created_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS sites (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        domain TEXT UNIQUE NOT NULL,
+        web_root TEXT,
+        proxy_pass TEXT,
+        php INTEGER DEFAULT 0,
+        php_version TEXT,
+        enabled INTEGER DEFAULT 1,
+        nginx_config TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS backups (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE NOT NULL,
+        path TEXT,
+        size INTEGER DEFAULT 0,
+        created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS api_tokens (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        token_id TEXT UNIQUE NOT NULL,
+        name TEXT NOT NULL,
+        token_hash TEXT NOT NULL,
+        permissions TEXT DEFAULT '["read"]',
+        created_by TEXT,
+        created_at TEXT NOT NULL,
+        expires_at TEXT,
+        last_used TEXT
+    );
+    CREATE TABLE IF NOT EXISTS twofa_settings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        secret TEXT NOT NULL,
+        enabled INTEGER DEFAULT 0,
+        pending INTEGER DEFAULT 1,
+        backup_codes TEXT DEFAULT '[]',
+        created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS subdomains (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        domain TEXT NOT NULL,
+        subdomain TEXT NOT NULL,
+        target TEXT NOT NULL,
+        created_by TEXT,
+        created_at TEXT NOT NULL,
+        UNIQUE(domain, subdomain)
+    );
+    CREATE TABLE IF NOT EXISTS redirects (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        domain TEXT,
+        from_url TEXT NOT NULL,
+        to_url TEXT NOT NULL,
+        redirect_type INTEGER DEFAULT 302,
+        created_by TEXT,
+        created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS ftp_accounts (
+        username TEXT PRIMARY KEY,
+        home_dir TEXT NOT NULL,
+        quota_mb INTEGER DEFAULT 1024,
+        created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS notifications (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        message TEXT NOT NULL,
+        level TEXT NOT NULL DEFAULT 'info',
+        category TEXT NOT NULL DEFAULT 'system',
+        read INTEGER NOT NULL DEFAULT 0,
+        read_at TEXT,
+        created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS login_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL,
+        success INTEGER NOT NULL DEFAULT 0,
+        ip TEXT,
+        user_agent TEXT,
+        timestamp TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS fail2ban_config (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS vpn_config (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS ssh_keys (
+        fingerprint TEXT PRIMARY KEY,
+        public_key TEXT NOT NULL,
+        name TEXT,
+        user TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS panel_sessions (
+        token TEXT PRIMARY KEY,
+        username TEXT NOT NULL,
+        ip TEXT,
+        user_agent TEXT,
+        created_at TEXT NOT NULL,
+        last_active TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS resource_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sample_json TEXT NOT NULL,
+        timestamp REAL NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS staging_environments (
+        id TEXT PRIMARY KEY,
+        source_domain TEXT NOT NULL,
+        staging_domain TEXT NOT NULL,
+        staging_path TEXT,
+        source_path TEXT,
+        database TEXT,
+        created_by TEXT,
+        created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS statuspage_config (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS statuspage_incidents (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        incident_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'investigating',
+        affected_services TEXT DEFAULT '[]',
+        resolved INTEGER NOT NULL DEFAULT 0,
+        updates_json TEXT DEFAULT '[]',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS email_forwarding_rules (
+        id TEXT PRIMARY KEY,
+        domain TEXT NOT NULL,
+        source TEXT NOT NULL,
+        destination TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        keep_copy INTEGER NOT NULL DEFAULT 0,
+        description TEXT DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS email_routing (
+        domain TEXT PRIMARY KEY,
+        mode TEXT NOT NULL DEFAULT 'local',
+        relay_host TEXT,
+        relay_port INTEGER DEFAULT 25,
+        relay_username TEXT,
+        updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS email_catchall (
+        domain TEXT PRIMARY KEY,
+        address TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS spam_config (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS spam_rules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rule TEXT NOT NULL,
+        action TEXT NOT NULL DEFAULT 'reject',
+        description TEXT DEFAULT ''
+    );
+    CREATE TABLE IF NOT EXISTS error_pages (
+        domain TEXT NOT NULL,
+        code TEXT NOT NULL,
+        content TEXT NOT NULL,
+        content_type TEXT NOT NULL DEFAULT 'text/html',
+        PRIMARY KEY (domain, code)
+    );
+    CREATE TABLE IF NOT EXISTS bandwidth_config (
+        domain TEXT PRIMARY KEY,
+        monthly_limit_gb REAL NOT NULL DEFAULT 100,
+        alert_threshold_percent REAL NOT NULL DEFAULT 80,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        block_on_exceed INTEGER NOT NULL DEFAULT 0,
+        current_usage_bytes INTEGER NOT NULL DEFAULT 0,
+        reset_day INTEGER NOT NULL DEFAULT 1,
+        updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS user_quotas (
+        username TEXT PRIMARY KEY,
+        disk_limit_mb INTEGER NOT NULL DEFAULT 1024,
+        inode_limit INTEGER NOT NULL DEFAULT 100000,
+        bandwidth_limit_gb REAL
+    );
+    CREATE TABLE IF NOT EXISTS password_policy (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS dkim_config (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS hotlink_config (
+        domain TEXT PRIMARY KEY,
+        config_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS ip_access_rules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ip_address TEXT NOT NULL,
+        action TEXT NOT NULL DEFAULT 'allow',
+        scope TEXT NOT NULL DEFAULT 'panel',
+        description TEXT DEFAULT '',
+        created_at TEXT NOT NULL,
+        created_by TEXT
+    );
+    CREATE TABLE IF NOT EXISTS waf_config (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS waf_custom_rules (
+        rule_id TEXT PRIMARY KEY,
+        rule_name TEXT NOT NULL,
+        pattern TEXT NOT NULL,
+        action TEXT NOT NULL DEFAULT 'deny',
+        phase INTEGER NOT NULL DEFAULT 1,
+        severity INTEGER NOT NULL DEFAULT 2,
+        description TEXT DEFAULT '',
+        enabled INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS nginx_cache_config (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS nginx_proxy_config (
+        domain TEXT PRIMARY KEY,
+        config_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS alert_rules (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        alert_type TEXT NOT NULL,
+        threshold REAL,
+        email TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        check_interval INTEGER NOT NULL DEFAULT 300,
+        extra_json TEXT DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS alert_config (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
 """
 
 
@@ -224,7 +481,312 @@ def _init_schema() -> None:
                 conn.executescript("ALTER TABLE users ADD COLUMN parent_user_id INTEGER REFERENCES users(id);")
             except Exception:
                 pass
+        if current_version < 5:
+            try:
+                conn.executescript("ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0;")
+            except Exception:
+                pass
+            try:
+                conn.executescript("""
+                    CREATE TABLE IF NOT EXISTS ssl_wildcard (
+                        domain TEXT PRIMARY KEY,
+                        data TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    );
+                """)
+            except Exception:
+                pass
+            try:
+                conn.executescript("""
+                    CREATE TABLE IF NOT EXISTS sites (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        domain TEXT UNIQUE NOT NULL,
+                        web_root TEXT,
+                        proxy_pass TEXT,
+                        php INTEGER DEFAULT 0,
+                        php_version TEXT,
+                        enabled INTEGER DEFAULT 1,
+                        nginx_config TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT
+                    );
+                    CREATE TABLE IF NOT EXISTS backups (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name TEXT UNIQUE NOT NULL,
+                        path TEXT,
+                        size INTEGER DEFAULT 0,
+                        created_at TEXT NOT NULL
+                    );
+                """)
+            except Exception:
+                pass
         if current_version < SCHEMA_VERSION:
+            if current_version < 6:
+                try:
+                    conn.executescript("""
+                        CREATE TABLE IF NOT EXISTS api_tokens (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            token_id TEXT UNIQUE NOT NULL,
+                            name TEXT NOT NULL,
+                            token_hash TEXT NOT NULL,
+                            permissions TEXT DEFAULT '["read"]',
+                            created_by TEXT,
+                            created_at TEXT NOT NULL,
+                            expires_at TEXT,
+                            last_used TEXT
+                        );
+                        CREATE TABLE IF NOT EXISTS twofa_settings (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            username TEXT UNIQUE NOT NULL,
+                            secret TEXT NOT NULL,
+                            enabled INTEGER DEFAULT 0,
+                            pending INTEGER DEFAULT 1,
+                            backup_codes TEXT DEFAULT '[]',
+                            created_at TEXT NOT NULL
+                        );
+                        CREATE TABLE IF NOT EXISTS subdomains (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            domain TEXT NOT NULL,
+                            subdomain TEXT NOT NULL,
+                            target TEXT NOT NULL,
+                            created_by TEXT,
+                            created_at TEXT NOT NULL,
+                            UNIQUE(domain, subdomain)
+                        );
+                        CREATE TABLE IF NOT EXISTS redirects (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            domain TEXT,
+                            from_url TEXT NOT NULL,
+                            to_url TEXT NOT NULL,
+                            redirect_type INTEGER DEFAULT 302,
+                            created_by TEXT,
+                            created_at TEXT NOT NULL
+                        );
+                    """)
+                except Exception:
+                    pass
+            if current_version < 7:
+                try:
+                    conn.executescript("""
+                        CREATE TABLE IF NOT EXISTS ftp_accounts (
+                            username TEXT PRIMARY KEY,
+                            home_dir TEXT NOT NULL,
+                            quota_mb INTEGER DEFAULT 1024,
+                            created_at TEXT NOT NULL
+                        );
+                        CREATE TABLE IF NOT EXISTS notifications (
+                            id TEXT PRIMARY KEY,
+                            title TEXT NOT NULL,
+                            message TEXT NOT NULL,
+                            level TEXT NOT NULL DEFAULT 'info',
+                            category TEXT NOT NULL DEFAULT 'system',
+                            read INTEGER NOT NULL DEFAULT 0,
+                            read_at TEXT,
+                            created_at TEXT NOT NULL
+                        );
+                        CREATE TABLE IF NOT EXISTS login_history (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            username TEXT NOT NULL,
+                            success INTEGER NOT NULL DEFAULT 0,
+                            ip TEXT,
+                            user_agent TEXT,
+                            timestamp TEXT NOT NULL
+                        );
+                        CREATE TABLE IF NOT EXISTS fail2ban_config (
+                            key TEXT PRIMARY KEY,
+                            value TEXT NOT NULL
+                        );
+                        CREATE TABLE IF NOT EXISTS vpn_config (
+                            key TEXT PRIMARY KEY,
+                            value TEXT NOT NULL
+                        );
+                    """)
+                except Exception:
+                    pass
+            if current_version < 8:
+                try:
+                    conn.executescript("""
+                        CREATE TABLE IF NOT EXISTS ssh_keys (
+                            fingerprint TEXT PRIMARY KEY,
+                            public_key TEXT NOT NULL,
+                            name TEXT,
+                            user TEXT NOT NULL,
+                            created_at TEXT NOT NULL
+                        );
+                        CREATE TABLE IF NOT EXISTS panel_sessions (
+                            token TEXT PRIMARY KEY,
+                            username TEXT NOT NULL,
+                            ip TEXT,
+                            user_agent TEXT,
+                            created_at TEXT NOT NULL,
+                            last_active TEXT NOT NULL
+                        );
+                        CREATE TABLE IF NOT EXISTS resource_history (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            sample_json TEXT NOT NULL,
+                            timestamp REAL NOT NULL
+                        );
+                        CREATE TABLE IF NOT EXISTS staging_environments (
+                            id TEXT PRIMARY KEY,
+                            source_domain TEXT NOT NULL,
+                            staging_domain TEXT NOT NULL,
+                            staging_path TEXT,
+                            source_path TEXT,
+                            database TEXT,
+                            created_by TEXT,
+                            created_at TEXT NOT NULL
+                        );
+                        CREATE TABLE IF NOT EXISTS statuspage_config (
+                            key TEXT PRIMARY KEY,
+                            value TEXT NOT NULL
+                        );
+                        CREATE TABLE IF NOT EXISTS statuspage_incidents (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            incident_id TEXT NOT NULL,
+                            title TEXT NOT NULL,
+                            description TEXT DEFAULT '',
+                            status TEXT NOT NULL DEFAULT 'investigating',
+                            affected_services TEXT DEFAULT '[]',
+                            resolved INTEGER NOT NULL DEFAULT 0,
+                            updates_json TEXT DEFAULT '[]',
+                            created_at TEXT NOT NULL,
+                            updated_at TEXT NOT NULL
+                        );
+                    """)
+                except Exception:
+                    pass
+            if current_version < 9:
+                try:
+                    conn.executescript("""
+                        CREATE TABLE IF NOT EXISTS email_forwarding_rules (
+                            id TEXT PRIMARY KEY,
+                            domain TEXT NOT NULL,
+                            source TEXT NOT NULL,
+                            destination TEXT NOT NULL,
+                            enabled INTEGER NOT NULL DEFAULT 1,
+                            keep_copy INTEGER NOT NULL DEFAULT 0,
+                            description TEXT DEFAULT '',
+                            created_at TEXT NOT NULL,
+                            updated_at TEXT
+                        );
+                        CREATE TABLE IF NOT EXISTS email_routing (
+                            domain TEXT PRIMARY KEY,
+                            mode TEXT NOT NULL DEFAULT 'local',
+                            relay_host TEXT,
+                            relay_port INTEGER DEFAULT 25,
+                            relay_username TEXT,
+                            updated_at TEXT NOT NULL
+                        );
+                        CREATE TABLE IF NOT EXISTS email_catchall (
+                            domain TEXT PRIMARY KEY,
+                            address TEXT NOT NULL,
+                            enabled INTEGER NOT NULL DEFAULT 1,
+                            updated_at TEXT NOT NULL
+                        );
+                        CREATE TABLE IF NOT EXISTS spam_config (
+                            key TEXT PRIMARY KEY,
+                            value TEXT NOT NULL
+                        );
+                        CREATE TABLE IF NOT EXISTS spam_rules (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            rule TEXT NOT NULL,
+                            action TEXT NOT NULL DEFAULT 'reject',
+                            description TEXT DEFAULT ''
+                        );
+                        CREATE TABLE IF NOT EXISTS error_pages (
+                            domain TEXT NOT NULL,
+                            code TEXT NOT NULL,
+                            content TEXT NOT NULL,
+                            content_type TEXT NOT NULL DEFAULT 'text/html',
+                            PRIMARY KEY (domain, code)
+                        );
+                        CREATE TABLE IF NOT EXISTS bandwidth_config (
+                            domain TEXT PRIMARY KEY,
+                            monthly_limit_gb REAL NOT NULL DEFAULT 100,
+                            alert_threshold_percent REAL NOT NULL DEFAULT 80,
+                            enabled INTEGER NOT NULL DEFAULT 1,
+                            block_on_exceed INTEGER NOT NULL DEFAULT 0,
+                            current_usage_bytes INTEGER NOT NULL DEFAULT 0,
+                            reset_day INTEGER NOT NULL DEFAULT 1,
+                            updated_at TEXT NOT NULL
+                        );
+                        CREATE TABLE IF NOT EXISTS user_quotas (
+                            username TEXT PRIMARY KEY,
+                            disk_limit_mb INTEGER NOT NULL DEFAULT 1024,
+                            inode_limit INTEGER NOT NULL DEFAULT 100000,
+                            bandwidth_limit_gb REAL
+                        );
+                        CREATE TABLE IF NOT EXISTS password_policy (
+                            key TEXT PRIMARY KEY,
+                            value TEXT NOT NULL
+                        );
+                    """)
+                except Exception:
+                    pass
+            if current_version < 10:
+                try:
+                    conn.executescript("""
+                        CREATE TABLE IF NOT EXISTS dkim_config (
+                            key TEXT PRIMARY KEY,
+                            value TEXT NOT NULL
+                        );
+                        CREATE TABLE IF NOT EXISTS hotlink_config (
+                            domain TEXT PRIMARY KEY,
+                            config_json TEXT NOT NULL,
+                            updated_at TEXT NOT NULL
+                        );
+                        CREATE TABLE IF NOT EXISTS ip_access_rules (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            ip_address TEXT NOT NULL,
+                            action TEXT NOT NULL DEFAULT 'allow',
+                            scope TEXT NOT NULL DEFAULT 'panel',
+                            description TEXT DEFAULT '',
+                            created_at TEXT NOT NULL,
+                            created_by TEXT
+                        );
+                        CREATE TABLE IF NOT EXISTS waf_config (
+                            key TEXT PRIMARY KEY,
+                            value TEXT NOT NULL
+                        );
+                        CREATE TABLE IF NOT EXISTS waf_custom_rules (
+                            rule_id TEXT PRIMARY KEY,
+                            rule_name TEXT NOT NULL,
+                            pattern TEXT NOT NULL,
+                            action TEXT NOT NULL DEFAULT 'deny',
+                            phase INTEGER NOT NULL DEFAULT 1,
+                            severity INTEGER NOT NULL DEFAULT 2,
+                            description TEXT DEFAULT '',
+                            enabled INTEGER NOT NULL DEFAULT 1,
+                            created_at TEXT NOT NULL
+                        );
+                        CREATE TABLE IF NOT EXISTS nginx_cache_config (
+                            key TEXT PRIMARY KEY,
+                            value TEXT NOT NULL
+                        );
+                        CREATE TABLE IF NOT EXISTS nginx_proxy_config (
+                            domain TEXT PRIMARY KEY,
+                            config_json TEXT NOT NULL,
+                            updated_at TEXT NOT NULL
+                        );
+                        CREATE TABLE IF NOT EXISTS alert_rules (
+                            id TEXT PRIMARY KEY,
+                            name TEXT NOT NULL,
+                            alert_type TEXT NOT NULL,
+                            threshold REAL,
+                            email TEXT NOT NULL,
+                            enabled INTEGER NOT NULL DEFAULT 1,
+                            check_interval INTEGER NOT NULL DEFAULT 300,
+                            extra_json TEXT DEFAULT '{}',
+                            created_at TEXT NOT NULL,
+                            updated_at TEXT
+                        );
+                        CREATE TABLE IF NOT EXISTS alert_config (
+                            key TEXT PRIMARY KEY,
+                            value TEXT NOT NULL
+                        );
+                    """)
+                except Exception:
+                    pass
             conn.execute(
                 "INSERT OR REPLACE INTO schema_version (version, applied_at) VALUES (?, ?)",
                 (SCHEMA_VERSION, datetime.utcnow().isoformat() + "Z"),

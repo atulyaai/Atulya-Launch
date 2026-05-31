@@ -7,6 +7,7 @@ from pathlib import Path
 from ... import core
 from ..auth import require_auth
 from ..database import audit_log
+from .. import backup_service
 
 router: APIRouter = APIRouter(prefix="/backups")
 templates: Jinja2Templates = Jinja2Templates(directory=str(Path(__file__).parent.parent.parent / "templates"))
@@ -16,9 +17,10 @@ templates: Jinja2Templates = Jinja2Templates(directory=str(Path(__file__).parent
 @require_auth
 async def backups_list(request: Request) -> HTMLResponse:
     """Render the backups management page."""
-    backups: dict = core.backup_list()
+    backups: dict = backup_service.list_backups()
     schedules: list[dict] = core.backup_schedule_list()
-    domains: list[str] = list(core.site_list().keys())
+    from .. import sites_service
+    domains: list[str] = list(sites_service.list_sites().keys())
     return templates.TemplateResponse(request, "backups.html", {
         "user": request.state.user,
         "backups": backups,
@@ -31,7 +33,7 @@ async def backups_list(request: Request) -> HTMLResponse:
 @require_auth
 async def backup_create(request: Request, name: str = Form("")) -> RedirectResponse:
     """Create a new backup."""
-    result: dict = core.backup_create(name or None)
+    result: dict = backup_service.create_backup(name or None)
     audit_log(request.state.user["username"], "backup.create", "ok", {"name": result["name"]})
     return RedirectResponse("/backups", status_code=302)
 
@@ -41,7 +43,7 @@ async def backup_create(request: Request, name: str = Form("")) -> RedirectRespo
 async def backup_restore(request: Request, name: str = Form(...)) -> RedirectResponse:
     """Restore from a backup."""
     try:
-        result: dict = core.backup_restore(name)
+        result: dict = backup_service.restore_backup(name)
         audit_log(request.state.user["username"], "backup.restore", "ok", {"name": name})
     except ValueError as e:
         audit_log(request.state.user["username"], "backup.restore", "error", {"name": name, "error": str(e)})
@@ -80,4 +82,4 @@ async def backup_run_now(request: Request, domain: str = Form(...)) -> RedirectR
 @require_auth
 async def api_backups(request: Request) -> JSONResponse:
     """API endpoint returning all backups."""
-    return JSONResponse(list(core.backup_list().values()))
+    return JSONResponse(list(backup_service.list_backups().values()))

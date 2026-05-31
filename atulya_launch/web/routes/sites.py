@@ -8,6 +8,7 @@ from typing import Any
 from ... import core
 from ..auth import require_auth
 from ..database import audit_log
+from .. import sites_service
 
 router: APIRouter = APIRouter(prefix="/sites")
 templates: Jinja2Templates = Jinja2Templates(directory=str(Path(__file__).parent.parent.parent / "templates"))
@@ -17,7 +18,7 @@ templates: Jinja2Templates = Jinja2Templates(directory=str(Path(__file__).parent
 @require_auth
 async def sites_list(request: Request) -> HTMLResponse:
     """Render the sites list page."""
-    sites: dict = core.site_list()
+    sites: dict = sites_service.list_sites()
     return templates.TemplateResponse(request, "sites.html", {
         "user": request.state.user,
         "sites": sites,
@@ -29,7 +30,7 @@ async def sites_list(request: Request) -> HTMLResponse:
 async def sites_create(request: Request, domain: str = Form(...), proxy_pass: str = Form(""), php: bool = Form(False), php_version: str = Form("8.3")) -> RedirectResponse:
     """Create a new site domain."""
     try:
-        core.site_create(domain, proxy_pass=proxy_pass or None, php=php, php_version=php_version if php else None)
+        sites_service.create_site(domain, proxy_pass=proxy_pass or None, php=php, php_version=php_version if php else None)
         audit_log(request.state.user["username"], "site.create", "ok", {"domain": domain})
     except ValueError as e:
         audit_log(request.state.user["username"], "site.create", "error", {"domain": domain, "error": str(e)})
@@ -41,7 +42,7 @@ async def sites_create(request: Request, domain: str = Form(...), proxy_pass: st
 async def sites_php_version(request: Request, domain: str = Form(...), php_version: str = Form(...)) -> RedirectResponse:
     """Change the PHP version for a site."""
     try:
-        core.site_set_php_version(domain, php_version)
+        sites_service.set_php_version(domain, php_version)
         audit_log(request.state.user["username"], "site.php_version", "ok", {"domain": domain, "version": php_version})
     except ValueError as e:
         audit_log(request.state.user["username"], "site.php_version", "error", {"domain": domain, "error": str(e)})
@@ -52,9 +53,31 @@ async def sites_php_version(request: Request, domain: str = Form(...), php_versi
 @require_auth
 async def sites_delete(request: Request, domain: str = Form(...)) -> RedirectResponse:
     """Delete a site."""
-    core.site_delete(domain)
+    sites_service.delete_site(domain)
     audit_log(request.state.user["username"], "site.delete", "ok", {"domain": domain})
     return RedirectResponse("/sites", status_code=302)
+
+
+@router.post("/{domain}/enable")
+@require_auth
+async def sites_enable(request: Request, domain: str) -> JSONResponse:
+    """Enable a site."""
+    try:
+        result = sites_service.toggle_site(domain, True)
+        return JSONResponse({"status": "enabled", "domain": domain})
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=404)
+
+
+@router.post("/{domain}/disable")
+@require_auth
+async def sites_disable(request: Request, domain: str) -> JSONResponse:
+    """Disable a site."""
+    try:
+        result = sites_service.toggle_site(domain, False)
+        return JSONResponse({"status": "disabled", "domain": domain})
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=404)
 
 
 @router.post("/{domain}/nginx/reload")
@@ -70,4 +93,4 @@ async def nginx_reload(request: Request, domain: str) -> JSONResponse:
 @require_auth
 async def api_sites(request: Request) -> JSONResponse:
     """API endpoint returning all sites."""
-    return JSONResponse(list(core.site_list().values()))
+    return JSONResponse(list(sites_service.list_sites().values()))

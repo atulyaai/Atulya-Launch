@@ -93,6 +93,19 @@ class WebAppTests(unittest.TestCase):
             self.assertIn("Signed in successfully.", resp2.text)
         asyncio.run(run())
 
+    def test_ssh_terminal_page_after_login(self) -> None:
+        import asyncio
+        app = self._make_app()
+        client = self._get_client(app)
+        async def run():
+            resp = await client.post("/login", data={"username": "admin", "password": "admin123"}, follow_redirects=False)
+            self.assertIn("session_token", resp.cookies)
+            resp2 = await client.get("/ssh-terminal")
+            self.assertEqual(resp2.status_code, 200)
+            self.assertIn("SSH Terminal", resp2.text)
+            self.assertIn("/ws/ssh?session_id=", resp2.text)
+        asyncio.run(run())
+
     def test_cookie_post_requires_csrf(self) -> None:
         import asyncio
         app = self._make_app()

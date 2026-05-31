@@ -4,6 +4,8 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}Atulya Launch{% endblock %}</title>
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <script defer src="https://unpkg.com/alpinejs@3.14.3/dist/cdn.min.js"></script>
     <style>
         :root {
             --bg: #0f1117;
@@ -104,6 +106,7 @@
             <a href="/hotlink" class="{% if active == 'hotlink' %}active{% endif %}"><span class="icon">&#128274;</span> Hotlink</a>
             <a href="/ssl" class="{% if active == 'ssl' %}active{% endif %}"><span class="icon">&#128274;</span> SSL</a>
             <a href="/files" class="{% if active == 'files' %}active{% endif %}"><span class="icon">&#128193;</span> Files</a>
+            <a href="/ssh-terminal" class="{% if active == 'ssh_terminal' %}active{% endif %}"><span class="icon">&#128187;</span> SSH Terminal</a>
             <a href="/backups" class="{% if active == 'backups' %}active{% endif %}"><span class="icon">&#128190;</span> Backups</a>
             <a href="/monitoring" class="{% if active == 'monitoring' %}active{% endif %}"><span class="icon">&#128200;</span> Monitoring</a>
             <a href="/firewall" class="{% if active == 'firewall' %}active{% endif %}"><span class="icon">&#128737;</span> Firewall</a>
@@ -124,10 +127,11 @@
     </aside>
     <main class="main">
         {% for flash in get_flashed_messages(request) %}
-        <div class="alert alert-{{ flash.category }}">{{ flash.message }}</div>
+        <div class="alert alert-{{ flash.category }}" x-data="{ show: true }" x-show="show" x-init="setTimeout(() => show = false, 5000)" x-transition>{{ flash.message }}</div>
         {% endfor %}
         {% block content %}{% endblock %}
     </main>
+    <div id="toasts" style="position:fixed;top:20px;right:20px;z-index:1000;display:flex;flex-direction:column;gap:8px;"></div>
     {% set session_token = request.cookies.get('session_token') %}
     {% if session_token %}
     <script>
@@ -142,6 +146,25 @@
             input.value = window.ATULYA_CSRF_TOKEN;
             form.appendChild(input);
         }, true);
+        function showToast(message, type) {
+            type = type || 'info';
+            var colors = { success: '#22c55e', error: '#ef4444', warning: '#f59e0b', info: '#3b82f6' };
+            var el = document.createElement('div');
+            el.style.cssText = 'padding:12px 16px;border-radius:8px;color:#fff;font-size:14px;background:' + (colors[type] || colors.info) + ';box-shadow:0 4px 12px rgba(0,0,0,0.3);opacity:0;transition:opacity 0.3s;';
+            el.textContent = message;
+            document.getElementById('toasts').appendChild(el);
+            requestAnimationFrame(function() { el.style.opacity = '1'; });
+            setTimeout(function() { el.style.opacity = '0'; setTimeout(function() { el.remove(); }, 300); }, 5000);
+        }
+        document.body.addEventListener('htmx:afterRequest', function(e) {
+            if (e.detail.xhr && e.detail.xhr.response) {
+                try {
+                    var data = JSON.parse(e.detail.xhr.response);
+                    if (data.status) showToast(data.status, 'success');
+                    if (data.error) showToast(data.error, 'error');
+                } catch(ex) {}
+            }
+        });
     </script>
     {% endif %}
 </body>

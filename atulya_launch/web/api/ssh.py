@@ -6,25 +6,9 @@ from pydantic import BaseModel
 
 from atulya_launch import utils
 from atulya_launch.web.auth import get_current_user
+from atulya_launch.web.database import connect
 
 router = APIRouter(prefix="/api/ssh", tags=["ssh"])
-
-SSH_KEYS_FILE = utils.CONFIG_DIR / "ssh_keys.json"
-
-
-def _load_keys() -> dict:
-    if SSH_KEYS_FILE.exists():
-        import json
-        with open(SSH_KEYS_FILE, "r") as f:
-            return json.load(f) or {}
-    return {}
-
-
-def _save_keys(data: dict):
-    utils.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    import json
-    with open(SSH_KEYS_FILE, "w") as f:
-        json.dump(data, f, indent=2)
 
 
 def _fingerprint_from_key(pubkey: str) -> str:
@@ -52,10 +36,14 @@ class SSHKeyCreate(BaseModel):
 
 @router.get("/keys")
 def list_keys(user: dict = Depends(get_current_user)):
-    keys = _load_keys()
     username = user.get("sub", "admin")
-    user_keys = {k: v for k, v in keys.items() if v.get("user") == username}
-    return {"keys": user_keys}
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT fingerprint, public_key, name, user FROM ssh_keys WHERE user = ?",
+            (username,),
+        ).fetchall()
+    keys = {r["fingerprint"]: dict(r) for r in rows}
+    return {"keys": keys}
 
 
 @router.post("/keys")
@@ -65,17 +53,17 @@ def add_key(body: SSHKeyCreate, user: dict = Depends(get_current_user)):
     fp = _fingerprint_from_key(body.public_key)
     if not fp:
         raise HTTPException(status_code=400, detail="Could not compute fingerprint")
-    keys = _load_keys()
     username = user.get("sub", "admin")
     key_name = body.name or fp.replace(":", "")[:16]
-    keys[fp] = {
-        "fingerprint": fp,
-        "public_key": body.public_key.strip(),
-        "name": key_name,
-        "user": username,
-    }
-    _save_keys(keys)
-    # Also add to authorized_keys on Linux
+    from datetime import datetime
+    with connect() as conn:
+        existing = conn.execute("SELECT fingerprint FROM ssh_keys WHERE fingerprint = ?", (fp,)).fetchone()
+        if existing:
+            raise HTTPException(status_code=409, detail="Key already exists")
+        conn.execute(
+            "INSERT INTO ssh_keys (fingerprint, public_key, name, user, created_at) VALUES (?, ?, ?, ?, ?)",
+            (fp, body.public_key.strip(), key_name, username, datetime.now().isoformat()),
+        )
     if utils.is_linux():
         import os
         ssh_dir = os.path.expanduser("~/.ssh")
@@ -93,20 +81,22 @@ def add_key(body: SSHKeyCreate, user: dict = Depends(get_current_user)):
 
 @router.delete("/keys/{fingerprint}")
 def delete_key(fingerprint: str, user: dict = Depends(get_current_user)):
-    keys = _load_keys()
-    if fingerprint not in keys:
-        raise HTTPException(status_code=404, detail="Key not found")
-    del keys[fingerprint]
-    _save_keys(keys)
+    with connect() as conn:
+        row = conn.execute("SELECT fingerprint FROM ssh_keys WHERE fingerprint = ?", (fingerprint,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Key not found")
+        conn.execute("DELETE FROM ssh_keys WHERE fingerprint = ?", (fingerprint,))
     return {"status": "deleted", "fingerprint": fingerprint}
 
 
 @router.get("/keys/{fingerprint}/verify")
 def verify_key(fingerprint: str, user: dict = Depends(get_current_user)):
-    keys = _load_keys()
-    if fingerprint not in keys:
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT fingerprint, public_key, name FROM ssh_keys WHERE fingerprint = ?",
+            (fingerprint,),
+        ).fetchone()
+    if not row:
         raise HTTPException(status_code=404, detail="Key not found")
-    key_data = keys[fingerprint]
-    pubkey = key_data.get("public_key", "")
-    valid = _validate_pubkey(pubkey)
-    return {"fingerprint": fingerprint, "valid": valid, "name": key_data.get("name", "")}
+    valid = _validate_pubkey(row["public_key"])
+    return {"fingerprint": fingerprint, "valid": valid, "name": row["name"] or ""}

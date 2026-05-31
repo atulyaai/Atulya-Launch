@@ -1,30 +1,14 @@
 """Custom error pages API."""
 
 import os
-import json
-from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from atulya_launch import utils
 from atulya_launch.web.auth import get_current_user
+from atulya_launch.web.database import connect
 
 router = APIRouter(prefix="/api/errorpages", tags=["errorpages"])
-
-ERRORPAGES_FILE = utils.CONFIG_DIR / "errorpages.json"
-
-
-def _load_errorpages() -> dict:
-    if ERRORPAGES_FILE.exists():
-        with open(ERRORPAGES_FILE, "r") as f:
-            return json.load(f) or {}
-    return {}
-
-
-def _save_errorpages(data: dict):
-    utils.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    with open(ERRORPAGES_FILE, "w") as f:
-        json.dump(data, f, indent=2)
 
 
 class ErrorPageUpdate(BaseModel):
@@ -43,16 +27,18 @@ DEFAULT_ERROR_PAGES = {
 
 @router.get("/{domain}")
 def get_error_pages(domain: str, user: dict = Depends(get_current_user)):
-    data = _load_errorpages()
-    domain_pages = data.get(domain, {})
-    # Merge with defaults
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT code, content, content_type FROM error_pages WHERE domain = ?",
+            (domain,),
+        ).fetchall()
+    custom = {r["code"]: {"content": r["content"], "content_type": r["content_type"]} for r in rows}
     result = {}
     for code, default in DEFAULT_ERROR_PAGES.items():
-        result[code] = {
-            "content": domain_pages.get(code, default),
-            "custom": code in domain_pages,
-            "content_type": "text/html",
-        }
+        if code in custom:
+            result[code] = {"content": custom[code]["content"], "custom": True, "content_type": custom[code]["content_type"]}
+        else:
+            result[code] = {"content": default, "custom": False, "content_type": "text/html"}
     return {"domain": domain, "pages": result}
 
 
@@ -60,12 +46,12 @@ def get_error_pages(domain: str, user: dict = Depends(get_current_user)):
 def set_error_page(domain: str, code: str, body: ErrorPageUpdate, user: dict = Depends(get_current_user)):
     if code not in DEFAULT_ERROR_PAGES:
         raise HTTPException(status_code=400, detail=f"Unsupported error code: {code}")
-    data = _load_errorpages()
-    if domain not in data:
-        data[domain] = {}
-    data[domain][code] = body.content
-    _save_errorpages(data)
-    # Write nginx error page if Linux
+    with connect() as conn:
+        conn.execute(
+            """INSERT OR REPLACE INTO error_pages (domain, code, content, content_type)
+               VALUES (?, ?, ?, ?)""",
+            (domain, code, body.content, body.content_type),
+        )
     if utils.is_linux():
         error_dir = f"/var/www/{domain}/error_pages"
         os.makedirs(error_dir, exist_ok=True)
@@ -79,11 +65,8 @@ def set_error_page(domain: str, code: str, body: ErrorPageUpdate, user: dict = D
 def reset_error_page(domain: str, code: str, user: dict = Depends(get_current_user)):
     if code not in DEFAULT_ERROR_PAGES:
         raise HTTPException(status_code=400, detail=f"Unsupported error code: {code}")
-    data = _load_errorpages()
-    if domain in data and code in data[domain]:
-        del data[domain][code]
-        _save_errorpages(data)
-    # Remove custom file if Linux
+    with connect() as conn:
+        conn.execute("DELETE FROM error_pages WHERE domain = ? AND code = ?", (domain, code))
     if utils.is_linux():
         page_file = f"/var/www/{domain}/error_pages/{code}.html"
         if os.path.exists(page_file):

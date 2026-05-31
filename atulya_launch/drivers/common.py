@@ -63,6 +63,78 @@ class PlannedPackageDriver:
     def install(self, packages: list[str]) -> ApplyResult:
         return run_command([*self.command_prefix, *packages], self.dry_run)
 
+    def update(self) -> ApplyResult:
+        """Update package lists."""
+        if self.command_prefix[0] in ("apt-get", "apt"):
+            return run_command(["apt-get", "update", "-qq"], self.dry_run)
+        elif self.command_prefix[0] in ("dnf", "yum"):
+            return run_command([self.command_prefix[0], "makecache"], self.dry_run)
+        elif self.command_prefix[0] == "pacman":
+            return run_command(["pacman", "-Sy"], self.dry_run)
+        elif self.command_prefix[0] == "brew":
+            return run_command(["brew", "update"], self.dry_run)
+        elif self.command_prefix[0] == "choco":
+            return run_command(["choco", "upgrade", "all", "-y"], self.dry_run)
+        return ApplyResult(ok=True, action="update_skip", message="update not supported for this manager")
+
+    def remove(self, packages: list[str]) -> ApplyResult:
+        """Remove packages."""
+        if self.command_prefix[0] in ("apt-get", "apt"):
+            return run_command(["apt-get", "remove", "-y", *packages], self.dry_run)
+        elif self.command_prefix[0] in ("dnf", "yum"):
+            return run_command([self.command_prefix[0], "remove", "-y", *packages], self.dry_run)
+        elif self.command_prefix[0] == "pacman":
+            return run_command(["pacman", "-R", "--noconfirm", *packages], self.dry_run)
+        elif self.command_prefix[0] == "brew":
+            return run_command(["brew", "uninstall", *packages], self.dry_run)
+        elif self.command_prefix[0] == "choco":
+            return run_command(["choco", "uninstall", *packages, "-y"], self.dry_run)
+        return ApplyResult(ok=False, action="remove_fail", message="remove not supported")
+
+    def is_installed(self, package: str) -> bool:
+        """Check if a package is installed."""
+        if self.command_prefix[0] in ("apt-get", "apt"):
+            result = run_command(["dpkg", "-l", package], True)
+            return result.ok
+        elif self.command_prefix[0] in ("dnf", "yum"):
+            result = run_command([self.command_prefix[0], "list", "installed", package], True)
+            return result.ok
+        elif self.command_prefix[0] == "pacman":
+            result = run_command(["pacman", "-Qi", package], True)
+            return result.ok
+        elif self.command_prefix[0] == "brew":
+            result = run_command(["brew", "list", package], True)
+            return result.ok
+        elif self.command_prefix[0] == "choco":
+            result = run_command(["choco", "list", "--local-only", package], True)
+            return result.ok
+        return False
+
+
+def detect_package_manager() -> tuple[list[str], str]:
+    """Detect the system package manager and return (command_prefix, name)."""
+    import sys
+    import shutil
+
+    if sys.platform.startswith("linux"):
+        if shutil.which("apt-get"):
+            return ["apt-get", "install", "-y"], "apt"
+        elif shutil.which("dnf"):
+            return ["dnf", "install", "-y"], "dnf"
+        elif shutil.which("yum"):
+            return ["yum", "install", "-y"], "yum"
+        elif shutil.which("pacman"):
+            return ["pacman", "-S", "--noconfirm"], "pacman"
+    elif sys.platform == "darwin":
+        if shutil.which("brew"):
+            return ["brew", "install"], "brew"
+    elif sys.platform == "win32":
+        if shutil.which("choco"):
+            return ["choco", "install", "-y"], "choco"
+        elif shutil.which("winget"):
+            return ["winget", "install", "--accept-package-agreements", "--accept-source-agreements"], "winget"
+    return ["echo", "UNSUPPORTED:"], "unknown"
+
 
 @dataclass(slots=True)
 class FileWebServerDriver:
@@ -96,20 +168,80 @@ class BindDnsDriver:
     zone_dir: Path
     service: PlannedServiceDriver
     dry_run: bool = True
+    named_config: Path | None = None
+
+    MANAGED_BEGIN = "// BEGIN ATULYA LAUNCH MANAGED ZONES"
+    MANAGED_END = "// END ATULYA LAUNCH MANAGED ZONES"
+
+    def __post_init__(self) -> None:
+        if self.named_config is None:
+            self.named_config = self.zone_dir.parent / "named.conf.local"
 
     def apply_zone(self, zone: BindZone) -> ApplyResult:
         target = self.zone_dir / f"db.{zone.domain}"
         content = self._render_zone(zone)
+        zone_line = self._zone_config_line(zone.domain, target)
         if not self.dry_run:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content, encoding="utf-8")
-        reload_result = self.service.reload("bind9")
+            self._upsert_zone_config(zone.domain, zone_line)
+        check_result = run_command(["named-checkzone", zone.domain, target.as_posix()], self.dry_run)
+        commands = [*check_result.commands]
+        if not check_result.ok:
+            return ApplyResult(
+                ok=False,
+                action="bind.apply_zone",
+                changed=not self.dry_run,
+                message=check_result.message,
+                commands=commands,
+                files=[target.as_posix(), self.named_config.as_posix()],
+            )
+        reload_result = run_command(["rndc", "reload", zone.domain], self.dry_run)
+        commands.extend(reload_result.commands)
+        if not reload_result.ok:
+            fallback = self.service.reload("bind9")
+            commands.extend(fallback.commands)
+            reload_result = ApplyResult(
+                ok=fallback.ok,
+                action=fallback.action,
+                changed=fallback.changed,
+                message=fallback.message or reload_result.message,
+                commands=commands,
+            )
         return ApplyResult(
             ok=reload_result.ok,
             action="bind.apply_zone",
             changed=not self.dry_run,
-            commands=reload_result.commands,
-            files=[target.as_posix()],
+            message=reload_result.message,
+            commands=commands,
+            files=[target.as_posix(), self.named_config.as_posix()],
+        )
+
+    def delete_zone(self, domain: str) -> ApplyResult:
+        target = self.zone_dir / f"db.{domain}"
+        if not self.dry_run:
+            if target.exists():
+                target.unlink()
+            self._remove_zone_config(domain)
+        reload_result = run_command(["rndc", "reload"], self.dry_run)
+        commands = [*reload_result.commands]
+        if not reload_result.ok:
+            fallback = self.service.reload("bind9")
+            commands.extend(fallback.commands)
+            reload_result = ApplyResult(
+                ok=fallback.ok,
+                action=fallback.action,
+                changed=fallback.changed,
+                message=fallback.message or reload_result.message,
+                commands=commands,
+            )
+        return ApplyResult(
+            ok=reload_result.ok,
+            action="bind.delete_zone",
+            changed=not self.dry_run,
+            message=reload_result.message,
+            commands=commands,
+            files=[target.as_posix(), self.named_config.as_posix()],
         )
 
     def _render_zone(self, zone: BindZone) -> str:
@@ -125,6 +257,50 @@ class BindDnsDriver:
             ttl = int(record.get("ttl", 3600))
             lines.append(f"{name} {ttl} IN {record_type} {value}")
         return "\n".join(lines) + "\n"
+
+    def _zone_config_line(self, domain: str, zone_file: Path) -> str:
+        return f'zone "{domain}" {{ type master; file "{zone_file.as_posix()}"; }};'
+
+    def _read_named_config(self) -> str:
+        if self.named_config and self.named_config.exists():
+            return self.named_config.read_text(encoding="utf-8")
+        return "// Atulya Launch BIND local configuration\n"
+
+    def _write_named_config(self, zones: dict[str, str]) -> None:
+        if self.named_config is None:
+            return
+        existing = self._read_named_config()
+        before, _, tail = existing.partition(self.MANAGED_BEGIN)
+        _, _, after = tail.partition(self.MANAGED_END)
+        managed_lines = [self.MANAGED_BEGIN, *[zones[domain] for domain in sorted(zones)], self.MANAGED_END]
+        content = before.rstrip() + "\n\n" + "\n".join(managed_lines) + "\n" + after.lstrip()
+        self.named_config.parent.mkdir(parents=True, exist_ok=True)
+        self.named_config.write_text(content, encoding="utf-8")
+
+    def _managed_zones(self) -> dict[str, str]:
+        existing = self._read_named_config()
+        _, marker, tail = existing.partition(self.MANAGED_BEGIN)
+        if not marker:
+            return {}
+        managed, _, _ = tail.partition(self.MANAGED_END)
+        zones: dict[str, str] = {}
+        for line in managed.splitlines():
+            stripped = line.strip()
+            if not stripped.startswith('zone "'):
+                continue
+            domain = stripped.split('"', 2)[1]
+            zones[domain] = stripped
+        return zones
+
+    def _upsert_zone_config(self, domain: str, line: str) -> None:
+        zones = self._managed_zones()
+        zones[domain] = line
+        self._write_named_config(zones)
+
+    def _remove_zone_config(self, domain: str) -> None:
+        zones = self._managed_zones()
+        zones.pop(domain, None)
+        self._write_named_config(zones)
 
 
 @dataclass(slots=True)
@@ -150,3 +326,65 @@ class PlannedMailDriver:
             commands=[*postfix.commands, *dovecot.commands],
             files=[target.as_posix()],
         )
+
+
+@dataclass(slots=True)
+class PhpFpmDriver:
+    """PHP-FPM pool configuration and service management."""
+
+    pool_dir: Path
+    service: PlannedServiceDriver
+    dry_run: bool = True
+
+    POOL_TEMPLATE = """\
+[{{domain}}]
+user = www-data
+group = www-data
+listen = /run/php/php{{version}}-fpm-{{domain}}.sock
+listen.owner = www-data
+listen.group = www-data
+pm = dynamic
+pm.max_children = 5
+pm.start_servers = 2
+pm.min_spare_servers = 1
+pm.max_spare_servers = 3
+pm.max_requests = 500
+php_admin_value[error_log] = /var/log/php{{version}}-fpm-{{domain}}.error.log
+php_admin_flag[log_errors] = on
+"""
+
+    def install_pool(self, domain: str, version: str) -> ApplyResult:
+        """Write a PHP-FPM pool config for a domain."""
+        pool_file = self.pool_dir / f"{domain}.conf"
+        content = self.POOL_TEMPLATE.replace("{{domain}}", domain).replace("{{version}}", version)
+        if not self.dry_run:
+            pool_file.parent.mkdir(parents=True, exist_ok=True)
+            pool_file.write_text(content, encoding="utf-8")
+        return ApplyResult(
+            ok=True,
+            action="php_fpm.install_pool",
+            changed=not self.dry_run,
+            files=[pool_file.as_posix()],
+        )
+
+    def remove_pool(self, domain: str, version: str) -> ApplyResult:
+        """Remove a PHP-FPM pool config for a domain."""
+        pool_file = self.pool_dir / f"{domain}.conf"
+        if not self.dry_run and pool_file.exists():
+            pool_file.unlink()
+        return ApplyResult(
+            ok=True,
+            action="php_fpm.remove_pool",
+            changed=not self.dry_run,
+            files=[pool_file.as_posix()],
+        )
+
+    def reload(self, version: str) -> ApplyResult:
+        """Restart the PHP-FPM service for a specific version."""
+        service_name = f"php{version}-fpm"
+        return self.service.restart(service_name)
+
+    def status(self, version: str) -> ApplyResult:
+        """Check PHP-FPM service status."""
+        service_name = f"php{version}-fpm"
+        return self.service.status(service_name)

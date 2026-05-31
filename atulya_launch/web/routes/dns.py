@@ -52,8 +52,8 @@ async def zone_delete(request: Request, zone_id: int = Form(...)) -> RedirectRes
     with connect() as cur:
         row = cur.execute("SELECT domain FROM dns_zones WHERE id = ?", (zone_id,)).fetchone()
         domain = row["domain"] if row else None
-        cur.execute("DELETE FROM dns_records WHERE zone_id = ?", (zone_id,))
-        cur.execute("DELETE FROM dns_zones WHERE id = ?", (zone_id,))
+    if domain:
+        dns_service.delete_zone(domain)
     audit_log(request.state.user["username"], "dns.zone_delete", "ok", {"zone_id": zone_id, "domain": domain})
     return RedirectResponse("/dns", status_code=302)
 

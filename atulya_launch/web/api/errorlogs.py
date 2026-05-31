@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from atulya_launch import utils
 from atulya_launch.web.auth import get_current_user
 
-router = APIRouter(prefix="/api/sites", tags=["site-logs"])
+router = APIRouter(prefix="/api/site-logs", tags=["site-logs"])
 
 LOG_PATHS = {
     "nginx_error": "/var/log/nginx/error.log",

@@ -11,25 +11,32 @@ from pydantic import BaseModel
 
 from atulya_launch import utils
 from atulya_launch.web.auth import get_current_user
+from atulya_launch.web.database import connect
 
 router = APIRouter(prefix="/api/fail2ban", tags=["fail2ban"])
-
-F2B_CONFIG_FILE = utils.CONFIG_DIR / "fail2ban.json"
 
 JAIL_CONF = "/etc/fail2ban/jail.local"
 
 
 def _load_f2b_config() -> dict:
-    if F2B_CONFIG_FILE.exists():
-        with open(F2B_CONFIG_FILE, "r") as f:
-            return json.load(f) or {}
-    return {}
+    with connect() as conn:
+        rows = conn.execute("SELECT key, value FROM fail2ban_config").fetchall()
+    config = {}
+    for r in rows:
+        try:
+            config[r["key"]] = json.loads(r["value"])
+        except (json.JSONDecodeError, TypeError):
+            config[r["key"]] = r["value"]
+    return config
 
 
 def _save_f2b_config(data: dict):
-    utils.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    with open(F2B_CONFIG_FILE, "w") as f:
-        json.dump(data, f, indent=2)
+    with connect() as conn:
+        for key, value in data.items():
+            conn.execute(
+                "INSERT OR REPLACE INTO fail2ban_config (key, value) VALUES (?, ?)",
+                (key, json.dumps(value)),
+            )
 
 
 def _f2b_installed() -> bool:

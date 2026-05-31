@@ -8,10 +8,9 @@ from pydantic import BaseModel
 
 from atulya_launch import utils
 from atulya_launch.web.auth import get_current_user
+from atulya_launch.web.database import connect
 
 router = APIRouter(prefix="/api/email/forwarding", tags=["email-forwarding"])
-
-FORWARDING_FILE = utils.CONFIG_DIR / "email_forwarding.json"
 
 
 class ForwardingRuleCreate(BaseModel):
@@ -20,19 +19,6 @@ class ForwardingRuleCreate(BaseModel):
     enabled: bool = True
     keep_copy: bool = False
     description: Optional[str] = None
-
-
-def _load_forwarding() -> dict:
-    if FORWARDING_FILE.exists():
-        import json
-        return json.loads(FORWARDING_FILE.read_text())
-    return {"domains": {}}
-
-
-def _save_forwarding(data: dict):
-    FORWARDING_FILE.parent.mkdir(parents=True, exist_ok=True)
-    import json
-    FORWARDING_FILE.write_text(json.dumps(data, indent=2))
 
 
 def _generate_postfix_forwarding(domain: str, rules: list) -> str:
@@ -51,6 +37,7 @@ def _generate_postfix_forwarding(domain: str, rules: list) -> str:
 def _apply_postfix_forwarding(domain: str, rules: list):
     if not utils.is_linux():
         return
+    from pathlib import Path
     vmap_path = Path(f"/etc/postfix/virtual_{domain}")
     content = _generate_postfix_forwarding(domain, rules)
     vmap_path.parent.mkdir(parents=True, exist_ok=True)
@@ -59,16 +46,23 @@ def _apply_postfix_forwarding(domain: str, rules: list):
     main_cf = Path("/etc/postfix/main.cf")
     if main_cf.exists():
         cf_content = main_cf.read_text()
-        alias_maps_line = f"virtual_alias_maps = hash:/etc/postfix/virtual_{domain}"
-        if f"virtual_alias_maps" not in cf_content:
+        if "virtual_alias_maps" not in cf_content:
+            alias_maps_line = f"virtual_alias_maps = hash:/etc/postfix/virtual_{domain}"
             main_cf.write_text(cf_content + "\n" + alias_maps_line + "\n")
     utils.service_action("reload", "postfix")
 
 
 @router.get("/{domain}")
 def list_forwarding(domain: str, user: dict = Depends(get_current_user)):
-    data = _load_forwarding()
-    rules = data.get("domains", {}).get(domain, {}).get("rules", [])
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT id, source, destination, enabled, keep_copy, description, created_at, updated_at FROM email_forwarding_rules WHERE domain = ?",
+            (domain,),
+        ).fetchall()
+    rules = [dict(r) for r in rows]
+    for r in rules:
+        r["enabled"] = bool(r["enabled"])
+        r["keep_copy"] = bool(r["keep_copy"])
     return {"domain": domain, "rules": rules}
 
 
@@ -76,60 +70,61 @@ def list_forwarding(domain: str, user: dict = Depends(get_current_user)):
 def add_forwarding_rule(domain: str, body: ForwardingRuleCreate, user: dict = Depends(get_current_user)):
     if not body.source or not body.destination:
         raise HTTPException(status_code=400, detail="source and destination are required")
-    data = _load_forwarding()
-    domain_data = data.setdefault("domains", {}).setdefault(domain, {"rules": []})
-    rules = domain_data["rules"]
     rule_id = str(uuid.uuid4())[:8]
-    rule = {
-        "id": rule_id,
-        "source": body.source,
-        "destination": body.destination,
-        "enabled": body.enabled,
-        "keep_copy": body.keep_copy,
-        "description": body.description or "",
-        "created_at": datetime.datetime.now().isoformat(),
-    }
-    rules.append(rule)
-    _apply_postfix_forwarding(domain, rules)
-    _save_forwarding(data)
-    return {"status": "created", "rule_id": rule_id, "rule": rule}
+    now = datetime.datetime.now().isoformat()
+    with connect() as conn:
+        conn.execute(
+            """INSERT INTO email_forwarding_rules (id, domain, source, destination, enabled, keep_copy, description, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (rule_id, domain, body.source, body.destination, 1 if body.enabled else 0,
+             1 if body.keep_copy else 0, body.description or "", now),
+        )
+        rows = conn.execute(
+            "SELECT id, source, destination, enabled, keep_copy, description FROM email_forwarding_rules WHERE domain = ?",
+            (domain,),
+        ).fetchall()
+    _apply_postfix_forwarding(domain, [dict(r) for r in rows])
+    return {"status": "created", "rule_id": rule_id}
 
 
 @router.put("/{domain}/{rule_id}")
 def update_forwarding_rule(domain: str, rule_id: str, body: ForwardingRuleCreate, user: dict = Depends(get_current_user)):
-    data = _load_forwarding()
-    domain_data = data.get("domains", {}).get(domain, {})
-    rules = domain_data.get("rules", [])
-    found = False
-    for rule in rules:
-        if rule.get("id") == rule_id:
-            rule["source"] = body.source
-            rule["destination"] = body.destination
-            rule["enabled"] = body.enabled
-            rule["keep_copy"] = body.keep_copy
-            rule["description"] = body.description or ""
-            rule["updated_at"] = datetime.datetime.now().isoformat()
-            found = True
-            break
-    if not found:
-        raise HTTPException(status_code=404, detail="Rule not found")
-    _apply_postfix_forwarding(domain, rules)
-    _save_forwarding(data)
+    now = datetime.datetime.now().isoformat()
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT id FROM email_forwarding_rules WHERE id = ? AND domain = ?",
+            (rule_id, domain),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Rule not found")
+        conn.execute(
+            """UPDATE email_forwarding_rules
+               SET source = ?, destination = ?, enabled = ?, keep_copy = ?, description = ?, updated_at = ?
+               WHERE id = ?""",
+            (body.source, body.destination, 1 if body.enabled else 0,
+             1 if body.keep_copy else 0, body.description or "", now, rule_id),
+        )
+        rows = conn.execute(
+            "SELECT id, source, destination, enabled, keep_copy, description FROM email_forwarding_rules WHERE domain = ?",
+            (domain,),
+        ).fetchall()
+    _apply_postfix_forwarding(domain, [dict(r) for r in rows])
     return {"status": "updated", "rule_id": rule_id}
 
 
 @router.delete("/{domain}/{rule_id}")
 def delete_forwarding_rule(domain: str, rule_id: str, user: dict = Depends(get_current_user)):
-    data = _load_forwarding()
-    domain_data = data.get("domains", {}).get(domain, {})
-    rules = domain_data.get("rules", [])
-    new_rules = [r for r in rules if r.get("id") != rule_id]
-    if len(new_rules) == len(rules):
-        raise HTTPException(status_code=404, detail="Rule not found")
-    data["domains"][domain]["rules"] = new_rules
-    _apply_postfix_forwarding(domain, new_rules)
-    _save_forwarding(data)
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT id FROM email_forwarding_rules WHERE id = ? AND domain = ?",
+            (rule_id, domain),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Rule not found")
+        conn.execute("DELETE FROM email_forwarding_rules WHERE id = ?", (rule_id,))
+        rows = conn.execute(
+            "SELECT id, source, destination, enabled, keep_copy, description FROM email_forwarding_rules WHERE domain = ?",
+            (domain,),
+        ).fetchall()
+    _apply_postfix_forwarding(domain, [dict(r) for r in rows])
     return {"status": "deleted", "rule_id": rule_id}
-
-
-from pathlib import Path

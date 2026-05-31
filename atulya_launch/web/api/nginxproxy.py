@@ -11,26 +11,34 @@ from pydantic import BaseModel
 
 from atulya_launch import utils
 from atulya_launch.web.auth import get_current_user
+from atulya_launch.web.database import connect
 
 router = APIRouter(prefix="/api/nginx", tags=["nginx-proxy"])
 
 NGINX_SITES_AVAILABLE = "/etc/nginx/sites-available"
 NGINX_SITES_ENABLED = "/etc/nginx/sites-enabled"
 UPSTREAMS_CONF = "/etc/nginx/conf.d/upstreams.conf"
-PROXY_CONFIG_FILE = utils.CONFIG_DIR / "nginx_proxy.json"
 
 
 def _load_proxy_config() -> dict:
-    if PROXY_CONFIG_FILE.exists():
-        with open(PROXY_CONFIG_FILE, "r") as f:
-            return json.load(f) or {}
-    return {}
+    with connect() as conn:
+        rows = conn.execute("SELECT domain, config_json, updated_at FROM nginx_proxy_config").fetchall()
+    config = {}
+    for r in rows:
+        try:
+            config[r["domain"]] = json.loads(r["config_json"])
+        except (json.JSONDecodeError, TypeError):
+            config[r["domain"]] = {}
+    return config
 
 
-def _save_proxy_config(data: dict):
-    utils.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    with open(PROXY_CONFIG_FILE, "w") as f:
-        json.dump(data, f, indent=2)
+def _save_proxy_config(domain: str, data: dict):
+    now = datetime.now().isoformat()
+    with connect() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO nginx_proxy_config (domain, config_json, updated_at) VALUES (?, ?, ?)",
+            (domain, json.dumps(data), now),
+        )
 
 
 def _site_config_path(domain: str) -> Path:
@@ -57,27 +65,19 @@ def _generate_proxy_config(
         f"        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;",
         f"        proxy_set_header X-Forwarded-Proto $scheme;",
     ]
-
     if websocket:
         lines.extend([
             f"        proxy_http_version 1.1;",
-            f"        proxy_set_header Upgrade $http_upgrade;",
-            f"        proxy_set_header Connection \"upgrade\";",
+            f'        proxy_set_header Upgrade $http_upgrade;',
+            f'        proxy_set_header Connection "upgrade";',
             f"        proxy_read_timeout 86400;",
         ])
-
     if headers:
         for key, value in headers.items():
             lines.append(f"        proxy_set_header {key} {value};")
-
-    lines.extend([
-        f"    }}",
-        f"}}",
-    ])
-
+    lines.extend([f"    }}", f"}}"])
     if extra:
         lines.insert(-1, extra)
-
     return "\n".join(lines) + "\n"
 
 
@@ -142,11 +142,9 @@ def get_proxy_config(domain: str, user: dict = Depends(get_current_user)):
     config_path = _site_config_path(domain)
     if not config_path.exists():
         raise HTTPException(status_code=404, detail="Proxy config not found")
-
     content = config_path.read_text()
     proxy_data = _load_proxy_config()
     domain_config = proxy_data.get(domain, {})
-
     return {
         "domain": domain,
         "config_path": str(config_path),
@@ -165,32 +163,24 @@ def set_proxy_config(domain: str, body: ProxyConfig, user: dict = Depends(get_cu
         headers=body.headers,
         extra=body.extra_config,
     )
-
     config_path = _site_config_path(domain)
     config_path.parent.mkdir(parents=True, exist_ok=True)
     with open(config_path, "w") as f:
         f.write(config_content)
-
     enabled_path = Path(NGINX_SITES_ENABLED) / domain
     if not enabled_path.exists():
         try:
             enabled_path.symlink_to(config_path)
         except FileExistsError:
             pass
-
-    proxy_data = _load_proxy_config()
-    proxy_data[domain] = {
+    _save_proxy_config(domain, {
         "upstream": body.upstream,
         "port": body.port,
         "websocket": body.websocket,
         "headers": body.headers,
-        "updated_at": datetime.now().isoformat(),
-    }
-    _save_proxy_config(proxy_data)
-
+    })
     utils.run_command(["nginx", "-t"], check=False)
     utils.service_action("reload", "nginx")
-
     return {"status": "configured", "domain": domain, "config": config_content}
 
 
@@ -203,22 +193,17 @@ def list_upstreams(user: dict = Depends(get_current_user)):
 @router.post("/upstreams")
 def create_upstream(body: UpstreamCreate, user: dict = Depends(get_current_user)):
     upstream_block = _generate_upstream_block(body.name, [s.model_dump() for s in body.servers])
-
     Path(NGINX_SITES_AVAILABLE).mkdir(parents=True, exist_ok=True)
     conf_path = Path(UPSTREAMS_CONF)
-
     existing = ""
     if conf_path.exists():
         existing = conf_path.read_text()
         existing = re.sub(rf"upstream\s+{re.escape(body.name)}\s*\{{[^}}]+\}}", "", existing)
         existing = existing.strip()
-
     new_content = existing + "\n\n" + upstream_block if existing else upstream_block
     conf_path.write_text(new_content)
-
     utils.run_command(["nginx", "-t"], check=False)
     utils.service_action("reload", "nginx")
-
     return {"status": "created", "upstream": body.name, "servers": body.servers}
 
 
@@ -226,17 +211,13 @@ def create_upstream(body: UpstreamCreate, user: dict = Depends(get_current_user)
 def delete_upstream(name: str, user: dict = Depends(get_current_user)):
     if not Path(UPSTREAMS_CONF).exists():
         raise HTTPException(status_code=404, detail="Upstreams config not found")
-
     content = Path(UPSTREAMS_CONF).read_text()
     new_content = re.sub(rf"upstream\s+{re.escape(name)}\s*\{{[^}}]+\}}", "", content).strip()
-
     if new_content == content:
         raise HTTPException(status_code=404, detail="Upstream not found")
-
     Path(UPSTREAMS_CONF).write_text(new_content)
     utils.run_command(["nginx", "-t"], check=False)
     utils.service_action("reload", "nginx")
-
     return {"status": "deleted", "upstream": name}
 
 
@@ -245,10 +226,8 @@ def reload_proxy(domain: str, user: dict = Depends(get_current_user)):
     config_path = _site_config_path(domain)
     if not config_path.exists():
         raise HTTPException(status_code=404, detail="Proxy config not found")
-
     result = utils.run_command(["nginx", "-t"], check=False)
     if result and result.returncode != 0:
         raise HTTPException(status_code=500, detail="NGINX config test failed")
-
     utils.service_action("reload", "nginx")
     return {"status": "reloaded", "domain": domain}

@@ -1,0 +1,48 @@
+from fastapi import APIRouter, Request, Form
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.templating import Jinja2Templates
+from pathlib import Path
+
+from ... import core
+from ..auth import require_auth, require_admin
+from ..database import connect, audit_log
+
+router = APIRouter(prefix="/cron")
+templates = Jinja2Templates(directory=str(Path(__file__).parent.parent.parent / "templates"))
+
+
+@router.get("", response_class=HTMLResponse)
+@require_auth
+async def cron_page(request: Request):
+    jobs = core.cron_list()
+    return templates.TemplateResponse(request, "cron.html", {
+        "user": request.state.user,
+        "jobs": jobs,
+    })
+
+
+@router.post("/create")
+@require_auth
+async def cron_create(request: Request, command: str = Form(...), schedule: str = Form("0 0 * * *"), domain: str = Form("")):
+    result = core.cron_create(request.state.user["id"], command, schedule, domain=domain or None)
+    return RedirectResponse("/cron", status_code=302)
+
+
+@router.post("/delete")
+@require_auth
+async def cron_delete(request: Request, job_id: int = Form(...)):
+    core.cron_delete(job_id)
+    return RedirectResponse("/cron", status_code=302)
+
+
+@router.post("/toggle")
+@require_auth
+async def cron_toggle(request: Request, job_id: int = Form(...), enabled: int = Form(1)):
+    core.cron_toggle(job_id, enabled)
+    return RedirectResponse("/cron", status_code=302)
+
+
+@router.get("/api/list")
+@require_auth
+async def api_list(request: Request):
+    return JSONResponse(core.cron_list())

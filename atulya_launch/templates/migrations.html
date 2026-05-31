@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% set active = "migrations" %}
+{% block title %}Migrations - Atulya Launch{% endblock %}
+{% block content %}
+<div class="header">
+    <h2>Migration Import</h2>
+</div>
+
+{% if request.query_params.get('error') %}
+<div class="alert alert-danger">Import failed. Check the file format and try again.</div>
+{% endif %}
+{% if request.query_params.get('success') %}
+<div class="alert alert-success">Migration imported successfully.</div>
+{% endif %}
+
+<div class="section">
+    <div class="section-header">
+        <h3>Import from Another Panel</h3>
+    </div>
+    <div class="card" style="max-width:600px">
+        <form method="POST" action="/migrations/import" enctype="multipart/form-data">
+            <div class="form-group">
+                <label>Source Panel</label>
+                <select name="source">
+                    {% for key, info in sources.items() %}
+                    <option value="{{ key }}">{{ info.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Backup Archive</label>
+                <input type="file" name="file" required>
+            </div>
+            <div class="form-group">
+                <label>Domain (optional, for single-site import)</label>
+                <input type="text" name="domain" placeholder="example.com">
+            </div>
+            <button type="submit" class="btn btn-primary">Import</button>
+        </form>
+    </div>
+</div>
+
+{% if migrations %}
+<div class="section">
+    <div class="section-header">
+        <h3>Import History</h3>
+    </div>
+    <table>
+        <thead><tr><th>Source</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead>
+        <tbody>
+        {% for m in migrations %}
+        <tr>
+            <td><strong>{{ m.source }}</strong></td>
+            <td><span class="badge {% if m.status == 'completed' %}badge-success{% else %}badge-warning{% endif %}">{{ m.status }}</span></td>
+            <td>{{ m.created_at[:19] }}</td>
+            <td>
+                <form method="POST" action="/migrations/delete" style="display:inline" onsubmit="return confirm('Delete this migration record?')">
+                    <input type="hidden" name="migration_id" value="{{ m.id }}">
+                    <button class="btn btn-danger" style="padding:4px 10px;font-size:12px">Delete</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+{% endblock %}

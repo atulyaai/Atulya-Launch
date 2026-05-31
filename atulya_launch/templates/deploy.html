@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% set active = "deploy" %}
+{% block title %}App Deployment - Atulya Launch{% endblock %}
+{% block content %}
+<div class="header">
+    <h2>App Deployment</h2>
+    <button class="btn btn-primary" onclick="document.getElementById('deployModal').classList.add('active')">+ New App</button>
+</div>
+
+{% if apps %}
+<div class="section">
+    <table>
+        <thead><tr><th>Name</th><th>Domain</th><th>Type</th><th>Entry Point</th><th>Port</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody>
+        {% for a in apps %}
+        <tr>
+            <td><strong>{{ a.name }}</strong></td>
+            <td>{{ a.domain or '-' }}</td>
+            <td><span class="pill">{{ a.app_type }}</span></td>
+            <td><code style="font-size:12px">{{ a.entry_point }}</code></td>
+            <td>{{ a.port }}</td>
+            <td><span class="badge {% if a.status == 'running' %}badge-success{% else %}badge-danger{% endif %}">{{ a.status }}</span></td>
+            <td>
+                <form method="POST" action="/deploy/start" style="display:inline">
+                    <input type="hidden" name="app_id" value="{{ a.id }}">
+                    <button class="btn btn-ghost" style="padding:4px 10px;font-size:12px">Start</button>
+                </form>
+                <form method="POST" action="/deploy/stop" style="display:inline">
+                    <input type="hidden" name="app_id" value="{{ a.id }}">
+                    <button class="btn btn-danger" style="padding:4px 10px;font-size:12px">Stop</button>
+                </form>
+                <form method="POST" action="/deploy/delete" style="display:inline" onsubmit="return confirm('Delete {{ a.name }}?')">
+                    <input type="hidden" name="app_id" value="{{ a.id }}">
+                    <button class="btn btn-danger" style="padding:4px 10px;font-size:12px">Remove</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="empty-state">No apps deployed.</div>
+{% endif %}
+
+<div class="modal-overlay" id="deployModal">
+    <div class="modal">
+        <h3>Deploy New App</h3>
+        <form method="POST" action="/deploy/create">
+            <div class="form-group">
+                <label>App Name</label>
+                <input type="text" name="name" placeholder="myapp" required>
+            </div>
+            <div class="form-group">
+                <label>Domain</label>
+                <input type="text" name="domain" placeholder="app.example.com" required>
+            </div>
+            <div class="form-group">
+                <label>Type</label>
+                <select name="app_type">
+                    <option value="node">Node.js</option>
+                    <option value="python">Python</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Entry Point</label>
+                <input type="text" name="entry_point" value="index.js" placeholder="index.js / app.py">
+            </div>
+            <div class="form-group">
+                <label>Port</label>
+                <input type="number" name="port" value="3000">
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" onclick="this.closest('.modal-overlay').classList.remove('active')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Deploy</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

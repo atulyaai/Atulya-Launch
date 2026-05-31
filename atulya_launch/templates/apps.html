@@ -53,6 +53,23 @@
                     <label>Domain</label>
                     <input type="text" name="domain" placeholder="example.com" required>
                 </div>
+                {% if name == 'wordpress' %}
+                <div style="border-top:1px solid var(--border);padding-top:12px;margin-top:12px">
+                    <p style="font-size:13px;color:var(--text-dim);margin-bottom:12px">Database auto-creation (optional)</p>
+                    <div class="form-group">
+                        <label>Database Name</label>
+                        <input type="text" name="db_name" placeholder="wp_example">
+                    </div>
+                    <div class="form-group">
+                        <label>Database User</label>
+                        <input type="text" name="db_user" placeholder="wp_user">
+                    </div>
+                    <div class="form-group">
+                        <label>Database Password</label>
+                        <input type="text" name="db_pass" placeholder="auto-generated if empty">
+                    </div>
+                </div>
+                {% endif %}
                 <div class="modal-actions">
                     <button type="button" class="btn btn-ghost" onclick="this.closest('.modal-overlay').classList.remove('active')">Cancel</button>
                     <button type="submit" class="btn btn-primary">Install</button>

@@ -25,8 +25,11 @@ async def apps_page(request: Request):
 
 @router.post("/install")
 @require_auth
-async def app_install(request: Request, app_name: str = Form(...), domain: str = Form(...)):
-    result = core.app_install(app_name, domain)
+async def app_install(request: Request, app_name: str = Form(...), domain: str = Form(...), db_name: str = Form(""), db_user: str = Form(""), db_pass: str = Form("")):
+    if app_name == "wordpress" and (db_name or db_user):
+        result = core.wordpress_install(domain, db_name=db_name or None, db_user=db_user or None, db_pass=db_pass or None)
+    else:
+        result = core.app_install(app_name, domain)
     audit_log(request.state.user["username"], "app.install", "ok" if result.get("ok") else "error", {"app": app_name, "domain": domain})
     return RedirectResponse("/apps", status_code=302)
 

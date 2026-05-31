@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% set active = "logs" %}
+{% block title %}Log Viewer - Atulya Launch{% endblock %}
+{% block content %}
+<div class="header">
+    <h2>Log Viewer</h2>
+</div>
+
+<div class="section">
+    <div class="card">
+        <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px;align-items:end">
+            <div class="form-group" style="margin:0;flex:1;min-width:150px">
+                <label>Source</label>
+                <select id="logSource">
+                    {% for s in sources %}
+                    <option value="{{ s.key }}" {% if not s.exists %}disabled{% endif %}>{{ s.key }}{% if not s.exists %} (unavailable){% endif %}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group" style="margin:0;flex:1;min-width:150px">
+                <label>Lines</label>
+                <select id="logLines">
+                    <option value="50">50</option>
+                    <option value="100" selected>100</option>
+                    <option value="500">500</option>
+                    <option value="1000">1000</option>
+                </select>
+            </div>
+            <div class="form-group" style="margin:0;flex:2;min-width:200px">
+                <label>Filter</label>
+                <input type="text" id="logGrep" placeholder="search term (optional)">
+            </div>
+            <button class="btn btn-primary" onclick="loadLogs()">Load</button>
+        </div>
+        <pre id="logOutput" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:16px;font-size:12px;max-height:600px;overflow:auto;font-family:'Consolas','Monaco',monospace;line-height:1.5"></pre>
+    </div>
+</div>
+
+<script>
+async function loadLogs() {
+    const source = document.getElementById('logSource').value;
+    const lines = document.getElementById('logLines').value;
+    const grep = document.getElementById('logGrep').value;
+    const out = document.getElementById('logOutput');
+    out.textContent = 'Loading...';
+    try {
+        const resp = await fetch(`/logs/view?source=${encodeURIComponent(source)}&lines=${lines}&grep=${encodeURIComponent(grep)}`);
+        const data = await resp.json();
+        if (data.ok) {
+            out.textContent = data.lines.join('\n') || '(empty)';
+        } else {
+            out.textContent = 'Error: ' + (data.error || 'unknown');
+        }
+    } catch (e) {
+        out.textContent = 'Error: ' + e.message;
+    }
+}
+document.addEventListener('DOMContentLoaded', loadLogs);
+</script>
+{% endblock %}

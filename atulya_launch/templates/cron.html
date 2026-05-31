@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% set active = "cron" %}
+{% block title %}Cron Jobs - Atulya Launch{% endblock %}
+{% block content %}
+<div class="header">
+    <h2>Cron Jobs</h2>
+    <button class="btn btn-primary" onclick="document.getElementById('cronModal').classList.add('active')">+ Add Job</button>
+</div>
+
+{% if jobs %}
+<div class="section">
+    <table>
+        <thead><tr><th>Command</th><th>Schedule</th><th>Domain</th><th>Enabled</th><th>Last Run</th><th>Actions</th></tr></thead>
+        <tbody>
+        {% for j in jobs %}
+        <tr>
+            <td><code style="font-size:12px">{{ j.command[:60] }}{% if j.command|length > 60 %}...{% endif %}</code></td>
+            <td><span class="pill">{{ j.schedule }}</span></td>
+            <td>{{ j.domain or '-' }}</td>
+            <td>
+                <form method="POST" action="/cron/toggle" style="display:inline">
+                    <input type="hidden" name="job_id" value="{{ j.id }}">
+                    <input type="hidden" name="enabled" value="{% if j.enabled %}0{% else %}1{% endif %}">
+                    <button class="btn btn-ghost" style="padding:4px 10px;font-size:12px">{% if j.enabled %}<span class="badge-success">ON</span>{% else %}<span class="badge-danger">OFF</span>{% endif %}</button>
+                </form>
+            </td>
+            <td>{{ j.last_run[:19] if j.last_run else 'Never' }}</td>
+            <td>
+                <form method="POST" action="/cron/delete" style="display:inline" onsubmit="return confirm('Delete cron job?')">
+                    <input type="hidden" name="job_id" value="{{ j.id }}">
+                    <button class="btn btn-danger" style="padding:4px 10px;font-size:12px">Delete</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="empty-state">No cron jobs configured.</div>
+{% endif %}
+
+<div class="modal-overlay" id="cronModal">
+    <div class="modal">
+        <h3>Add Cron Job</h3>
+        <form method="POST" action="/cron/create">
+            <div class="form-group">
+                <label>Command</label>
+                <input type="text" name="command" placeholder="/usr/bin/php /var/www/example.com/script.php" required>
+            </div>
+            <div class="form-group">
+                <label>Schedule (cron expression)</label>
+                <input type="text" name="schedule" value="0 0 * * *" placeholder="min hour day month weekday">
+                <small style="color:var(--text-dim);font-size:11px">Format: minute hour day month weekday</small>
+            </div>
+            <div class="form-group">
+                <label>Domain (optional)</label>
+                <input type="text" name="domain" placeholder="example.com">
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" onclick="this.closest('.modal-overlay').classList.remove('active')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Add Job</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

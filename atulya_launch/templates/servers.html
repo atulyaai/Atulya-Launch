@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% set active = "servers" %}
+{% block title %}Remote Servers - Atulya Launch{% endblock %}
+{% block content %}
+<div class="header">
+    <h2>Remote Servers</h2>
+    <button class="btn btn-primary" onclick="document.getElementById('serverModal').classList.add('active')">+ Add Server</button>
+</div>
+
+{% if servers %}
+<div class="section">
+    <table>
+        <thead><tr><th>Name</th><th>Host</th><th>Port</th><th>Username</th><th>Auth</th><th>Actions</th></tr></thead>
+        <tbody>
+        {% for s in servers %}
+        <tr>
+            <td><strong>{{ s.name }}</strong></td>
+            <td>{{ s.host }}</td>
+            <td>{{ s.port }}</td>
+            <td>{{ s.username }}</td>
+            <td><span class="pill">{{ s.auth_type }}</span></td>
+            <td>
+                <button class="btn btn-ghost" style="padding:4px 10px;font-size:12px" onclick="execCommand({{ s.id }}, '{{ s.name }}')">Run</button>
+                <form method="POST" action="/servers/delete" style="display:inline" onsubmit="return confirm('Remove server {{ s.name }}?')">
+                    <input type="hidden" name="server_id" value="{{ s.id }}">
+                    <button class="btn btn-danger" style="padding:4px 10px;font-size:12px">Remove</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="empty-state">No remote servers configured.</div>
+{% endif %}
+
+<div class="modal-overlay" id="serverModal">
+    <div class="modal">
+        <h3>Add Remote Server</h3>
+        <form method="POST" action="/servers/create">
+            <div class="form-group">
+                <label>Name</label>
+                <input type="text" name="name" placeholder="production-web-01" required>
+            </div>
+            <div class="form-group">
+                <label>Host</label>
+                <input type="text" name="host" placeholder="192.168.1.100" required>
+            </div>
+            <div class="form-group">
+                <label>Port</label>
+                <input type="number" name="port" value="22">
+            </div>
+            <div class="form-group">
+                <label>Username</label>
+                <input type="text" name="username" value="root">
+            </div>
+            <div class="form-group">
+                <label>Auth Type</label>
+                <select name="auth_type">
+                    <option value="password">Password</option>
+                    <option value="key">SSH Key</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Auth Data (password or key path)</label>
+                <input type="text" name="auth_data" placeholder="password or /path/to/key">
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" onclick="this.closest('.modal-overlay').classList.remove('active')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Add Server</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal-overlay" id="execModal">
+    <div class="modal" style="width:600px">
+        <h3>Execute Command on <span id="execServerName"></span></h3>
+        <div class="form-group">
+            <input type="hidden" id="execServerId">
+            <input type="text" id="execCommand" placeholder="uptime" style="width:100%">
+        </div>
+        <button class="btn btn-primary" onclick="doExec()">Execute</button>
+        <div class="modal-actions">
+            <button type="button" class="btn btn-ghost" onclick="this.closest('.modal-overlay').classList.remove('active')">Close</button>
+        </div>
+        <pre id="execOutput" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px;margin-top:12px;font-size:12px;max-height:300px;overflow:auto;display:none"></pre>
+    </div>
+</div>
+
+<script>
+function execCommand(id, name) {
+    document.getElementById('execServerId').value = id;
+    document.getElementById('execServerName').textContent = name;
+    document.getElementById('execOutput').style.display = 'none';
+    document.getElementById('execCommand').value = 'uptime';
+    document.getElementById('execModal').classList.add('active');
+}
+async function doExec() {
+    const id = document.getElementById('execServerId').value;
+    const cmd = document.getElementById('execCommand').value;
+    const out = document.getElementById('execOutput');
+    out.style.display = 'block';
+    out.textContent = 'Executing...';
+    try {
+        const resp = await fetch('/servers/exec', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: 'server_id=' + id + '&command=' + encodeURIComponent(cmd),
+        });
+        const data = await resp.json();
+        if (data.ok) {
+            out.textContent = (data.stdout || '') + (data.stderr ? '\nSTDERR:\n' + data.stderr : '') + '\nExit: ' + data.exit_code;
+        } else {
+            out.textContent = 'Error: ' + (data.error || 'unknown');
+        }
+    } catch (e) {
+        out.textContent = 'Error: ' + e.message;
+    }
+}
+</script>
+{% endblock %}

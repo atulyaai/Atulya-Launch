@@ -27,7 +27,7 @@ def create_app():
 
     templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
 
-    from .routes import dashboard, sites, dns, email as email_mod, databases, ssl as ssl_mod, files, backups, monitoring, firewall, apps, settings, docker
+    from .routes import dashboard, sites, dns, email as email_mod, databases, ssl as ssl_mod, files, backups, monitoring, firewall, apps, settings, docker, migrations, cron as cron_mod, deploy, logs, security, loadtest, servers
     app.include_router(dashboard.router)
     app.include_router(sites.router)
     app.include_router(dns.router)
@@ -41,6 +41,13 @@ def create_app():
     app.include_router(apps.router)
     app.include_router(settings.router)
     app.include_router(docker.router)
+    app.include_router(migrations.router)
+    app.include_router(cron_mod.router)
+    app.include_router(deploy.router)
+    app.include_router(logs.router)
+    app.include_router(security.router)
+    app.include_router(loadtest.router)
+    app.include_router(servers.router)
 
     @app.get("/api/sites")
     async def api_sites_root(request: Request):

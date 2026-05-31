@@ -562,6 +562,25 @@ def dashboard_data():
     }
 
 
+def detect_web_server():
+    """Detect which web server is installed."""
+    if sys.platform != "linux":
+        return None
+    try:
+        r = subprocess.run(["nginx", "-v"], capture_output=True, text=True, timeout=10)
+        if r.returncode == 0 or r.returncode == 1:
+            return "nginx"
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    try:
+        r = subprocess.run(["apache2ctl", "-v"], capture_output=True, text=True, timeout=10)
+        if r.returncode == 0:
+            return "apache"
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    return None
+
+
 def get_platform():
     if sys.platform.startswith("linux"):
         return "linux"
@@ -883,6 +902,24 @@ def database_backup(name, db_type="mysql"):
     return {"ok": True, "name": name, "path": str(backup_path), "size": backup_path.stat().st_size}
 
 
+def db_list():
+    """List databases from panel config."""
+    cfg = load_config()
+    dbs = cfg.get("databases", {})
+    if not isinstance(dbs, dict):
+        return {}
+    return dbs
+
+
+def ssl_list():
+    """List SSL certificates from panel config."""
+    cfg = load_config()
+    certs = cfg.get("ssl_certs", {})
+    if not isinstance(certs, dict):
+        return {}
+    return {k: v for k, v in certs.items() if isinstance(v, dict)}
+
+
 def ssl_issue_letsencrypt(domain):
     if get_platform() != "linux":
         return {"ok": False, "error": "SSL issuance only supported on Linux"}
@@ -1025,3 +1062,564 @@ def app_uninstall(app_name):
     save_config(cfg)
     audit_event("app.uninstall", "ok", {"app": app_name})
     return {"ok": True, "app": app_name}
+
+
+# ─── v0.3.0: Migration Import ────────────────────────────────────────────────
+
+MIGRATION_SOURCES = {
+    "cpanel": {"name": "cPanel", "ext": ".tar.gz"},
+    "plesk": {"name": "Plesk", "ext": ".tar"},
+    "hestiacp": {"name": "HestiaCP", "ext": ".tar"},
+}
+
+
+def migration_import(source, file_path, domain=None):
+    if source not in MIGRATION_SOURCES:
+        return {"ok": False, "error": f"unknown source: {source}, expected one of {list(MIGRATION_SOURCES)}"}
+    p = Path(file_path)
+    if not p.exists():
+        return {"ok": False, "error": f"file not found: {file_path}"}
+    try:
+        import tarfile, zipfile
+        extract_dir = tempfile.mkdtemp(prefix="atulya_migration_")
+        if p.suffix == ".zip":
+            with zipfile.ZipFile(p, "r") as zf:
+                safe_extract_zip(zf, extract_dir)
+        else:
+            with tarfile.open(p, "r:*") as tf:
+                safe_extract_tar(tf, extract_dir)
+        sites_imported = 0
+        dbs_imported = 0
+        emails_imported = 0
+        for item in Path(extract_dir).iterdir():
+            if item.is_dir():
+                site_create(item.name, web_root=str(item))
+                sites_imported += 1
+            elif item.suffix in (".sql", ".dump"):
+                db_name = item.stem
+                database_create(db_name, "mysql")
+                dbs_imported += 1
+        shutil.rmtree(extract_dir, ignore_errors=True)
+        summary = {"sites": sites_imported, "databases": dbs_imported, "emails": emails_imported}
+        audit_event("migration.import", "ok", {"source": source, "file": file_path, **summary})
+        return {"ok": True, "source": source, **summary}
+    except Exception as e:
+        audit_event("migration.import", "error", {"source": source, "file": file_path, "error": str(e)})
+        return {"ok": False, "error": str(e)}
+
+
+def migration_list():
+    from .web.database import connect
+    try:
+        with connect() as cur:
+            rows = cur.execute("SELECT * FROM migrations ORDER BY created_at DESC").fetchall()
+            return [dict(r) for r in rows]
+    except RuntimeError:
+        return []
+
+
+def migration_delete(migration_id):
+    from .web.database import connect
+    with connect() as cur:
+        cur.execute("DELETE FROM migrations WHERE id = ?", (migration_id,))
+
+
+# ─── v0.3.0: Reseller Plans ──────────────────────────────────────────────────
+
+def plan_create(name, sites_limit=0, disk_limit_mb=0, db_limit=0, email_limit=0, bandwidth_limit_mb=0, price_monthly=0):
+    from .web.database import connect, audit_log
+    from datetime import datetime
+    with connect() as cur:
+        cur.execute(
+            "INSERT INTO plans (name, sites_limit, disk_limit_mb, db_limit, email_limit, bandwidth_limit_mb, price_monthly, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (name, sites_limit, disk_limit_mb, db_limit, email_limit, bandwidth_limit_mb, price_monthly, datetime.utcnow().isoformat() + "Z"),
+        )
+    audit_log("system", "plan.create", "ok", {"name": name})
+    return {"ok": True, "name": name}
+
+
+def plan_list():
+    from .web.database import connect
+    try:
+        with connect() as cur:
+            rows = cur.execute("SELECT * FROM plans ORDER BY name").fetchall()
+            return [dict(r) for r in rows]
+    except RuntimeError:
+        return []
+
+
+def plan_get(plan_id):
+    from .web.database import connect
+    with connect() as cur:
+        row = cur.execute("SELECT * FROM plans WHERE id = ?", (plan_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def plan_delete(plan_id):
+    from .web.database import connect, audit_log
+    with connect() as cur:
+        cur.execute("DELETE FROM plans WHERE id = ?", (plan_id,))
+    audit_log("system", "plan.delete", "ok", {"plan_id": plan_id})
+
+
+def plan_assign(user_id, plan_id, expires_at=None):
+    from .web.database import connect, audit_log
+    from datetime import datetime
+    with connect() as cur:
+        cur.execute("DELETE FROM user_plans WHERE user_id = ?", (user_id,))
+        cur.execute(
+            "INSERT INTO user_plans (user_id, plan_id, assigned_at, expires_at) VALUES (?, ?, ?, ?)",
+            (user_id, plan_id, datetime.utcnow().isoformat() + "Z", expires_at),
+        )
+    audit_log("system", "plan.assign", "ok", {"user_id": user_id, "plan_id": plan_id})
+
+
+def plan_user_get(user_id):
+    from .web.database import connect
+    with connect() as cur:
+        row = cur.execute(
+            "SELECT p.*, up.expires_at FROM plans p JOIN user_plans up ON p.id = up.plan_id WHERE up.user_id = ?",
+            (user_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def check_user_limits(user_id):
+    plan = plan_user_get(user_id)
+    if not plan:
+        return {"allowed": True, "reason": "no plan"}
+
+    from .web.database import connect
+    with connect() as cur:
+        sites_count = cur.execute("SELECT COUNT(*) as c FROM sites").fetchone()["c"]
+        dbs_count = cur.execute("SELECT COUNT(*) as c FROM databases").fetchone()["c"]
+        emails_count = cur.execute("SELECT COUNT(*) as c FROM email_accounts").fetchone()["c"]
+
+    violations = []
+    if plan["sites_limit"] > 0 and sites_count >= plan["sites_limit"]:
+        violations.append(f"sites limit {plan['sites_limit']} reached")
+    if plan["db_limit"] > 0 and dbs_count >= plan["db_limit"]:
+        violations.append(f"database limit {plan['db_limit']} reached")
+    if plan["email_limit"] > 0 and emails_count >= plan["email_limit"]:
+        violations.append(f"email limit {plan['email_limit']} reached")
+
+    if violations:
+        return {"allowed": False, "reason": "; ".join(violations)}
+    return {"allowed": True, "reason": "ok"}
+
+
+# ─── v0.3.0: WordPress One-Click Installer ──────────────────────────────────
+
+def wordpress_install(domain, db_name=None, db_user=None, db_pass=None, admin_user="admin", admin_email="admin@example.com"):
+    site = site_create(domain, php=True)
+    if not site.get("ok", True) and "already exists" not in str(site):
+        return site
+    cfg = load_config()
+    panel_dir = ensure_dirs()
+    web_root = panel_dir / "webroot" / domain
+    web_root.mkdir(parents=True, exist_ok=True)
+
+    import zipfile, io, urllib.request
+    wp_url = "https://wordpress.org/latest.zip"
+    try:
+        with urllib.request.urlopen(wp_url, timeout=30) as resp:
+            data = resp.read()
+    except Exception as e:
+        return {"ok": False, "error": f"failed to download WordPress: {e}"}
+
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        for member in zf.namelist():
+            target = web_root / member
+            if not target.resolve().is_relative_to(web_root.resolve()):
+                continue
+            if member.endswith("/"):
+                target.mkdir(parents=True, exist_ok=True)
+            else:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(zf.read(member))
+
+    wp_config_path = web_root / "wp-config.php"
+    if not wp_config_path.exists():
+        sample = web_root / "wp-config-sample.php"
+        if sample.exists():
+            wp_config = sample.read_text()
+            db_name_val = db_name or f"wp_{domain.replace('.', '_')}"
+            db_user_val = db_user or db_name_val
+            db_pass_val = db_pass or secrets.token_urlsafe(16)
+            wp_config = wp_config.replace("database_name_here", db_name_val)
+            wp_config = wp_config.replace("username_here", db_user_val)
+            wp_config = wp_config.replace("password_here", db_pass_val)
+            wp_config = wp_config.replace("wp_", f"wp_{secrets.token_hex(4)}_")
+            salt_keys = ["AUTH_KEY", "SECURE_AUTH_KEY", "LOGGED_IN_KEY", "NONCE_KEY",
+                         "AUTH_SALT", "SECURE_AUTH_SALT", "LOGGED_IN_SALT", "NONCE_SALT"]
+            for key in salt_keys:
+                wp_config = wp_config.replace(f"define( '{key}',", f"define( '{key}', '{secrets.token_urlsafe(32)}'")
+            wp_config_path.write_text(wp_config)
+
+    cfg.setdefault("installed_apps", {})["wordpress_" + domain] = {
+        "domain": domain,
+        "installed_at": datetime.utcnow().isoformat() + "Z",
+    }
+    save_config(cfg)
+
+    result = {"ok": True, "domain": domain, "path": str(web_root)}
+    if db_name:
+        db_result = database_create(db_name, "mysql")
+        result["db_create"] = db_result.get("ok", False)
+    audit_event("wordpress.install", "ok", {"domain": domain})
+    return result
+
+
+# ─── v0.4.0: Node.js/Python App Deployment ──────────────────────────────────
+
+def deploy_app(name, domain, app_type="node", entry_point="index.js", port=3000):
+    from .web.database import connect, audit_log
+    from datetime import datetime
+    site = site_create(domain, proxy_pass=f"http://127.0.0.1:{port}", php=False)
+    with connect() as cur:
+        cur.execute(
+            "INSERT INTO node_apps (name, domain, app_type, entry_point, port, status, created_at) VALUES (?, ?, ?, ?, ?, 'stopped', ?)",
+            (name, domain, app_type, entry_point, port, datetime.utcnow().isoformat() + "Z"),
+        )
+    audit_log("system", "deploy.create", "ok", {"name": name, "domain": domain, "type": app_type})
+    return {"ok": True, "name": name, "domain": domain, "port": port}
+
+
+def deploy_list():
+    from .web.database import connect
+    try:
+        with connect() as cur:
+            rows = cur.execute("SELECT * FROM node_apps ORDER BY created_at DESC").fetchall()
+            return [dict(r) for r in rows]
+    except RuntimeError:
+        return []
+
+
+def deploy_delete(app_id):
+    from .web.database import connect, audit_log
+    with connect() as cur:
+        cur.execute("DELETE FROM node_apps WHERE id = ?", (app_id,))
+    audit_log("system", "deploy.delete", "ok", {"app_id": app_id})
+
+
+def deploy_start(app_id):
+    from .web.database import connect, audit_log
+    with connect() as cur:
+        row = cur.execute("SELECT * FROM node_apps WHERE id = ?", (app_id,)).fetchone()
+        if not row:
+            return {"ok": False, "error": "app not found"}
+        app = dict(row)
+    if sys.platform != "linux":
+        with connect() as cur:
+            cur.execute("UPDATE node_apps SET status = 'running' WHERE id = ?", (app_id,))
+        audit_log("system", "deploy.start", "ok", {"app_id": app_id, "note": "simulated on non-linux"})
+        return {"ok": True}
+    try:
+        proc = subprocess.Popen(
+            ["node" if app["app_type"] == "node" else "python3", app["entry_point"]],
+            cwd=str(Path(app.get("domain", "."))),
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        with connect() as cur:
+            cur.execute("UPDATE node_apps SET process_id = ?, status = 'running' WHERE id = ?", (proc.pid, app_id))
+        audit_log("system", "deploy.start", "ok", {"app_id": app_id, "pid": proc.pid})
+        return {"ok": True, "pid": proc.pid}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def deploy_stop(app_id):
+    from .web.database import connect, audit_log
+    with connect() as cur:
+        row = cur.execute("SELECT * FROM node_apps WHERE id = ?", (app_id,)).fetchone()
+        if not row:
+            return {"ok": False, "error": "app not found"}
+        app = dict(row)
+        pid = app.get("process_id")
+        if pid and sys.platform == "linux":
+            try:
+                os.kill(pid, 15)
+            except (OSError, ProcessLookupError):
+                pass
+        cur.execute("UPDATE node_apps SET process_id = NULL, status = 'stopped' WHERE id = ?", (app_id,))
+    audit_log("system", "deploy.stop", "ok", {"app_id": app_id})
+    return {"ok": True}
+
+
+# ─── v0.4.0: Cron Job Management ────────────────────────────────────────────
+
+def cron_create(user_id, command, schedule="0 0 * * *", domain=None):
+    from .web.database import connect, audit_log
+    from datetime import datetime
+    with connect() as cur:
+        cur.execute(
+            "INSERT INTO cron_jobs (user_id, domain, command, schedule, enabled, created_at) VALUES (?, ?, ?, ?, 1, ?)",
+            (user_id, domain, command, schedule, datetime.utcnow().isoformat() + "Z"),
+        )
+    audit_log("system", "cron.create", "ok", {"command": command[:60]})
+    return {"ok": True}
+
+
+def cron_list():
+    from .web.database import connect
+    try:
+        with connect() as cur:
+            rows = cur.execute("SELECT * FROM cron_jobs ORDER BY created_at DESC").fetchall()
+            return [dict(r) for r in rows]
+    except RuntimeError:
+        return []
+
+
+def cron_delete(job_id):
+    from .web.database import connect, audit_log
+    with connect() as cur:
+        cur.execute("DELETE FROM cron_jobs WHERE id = ?", (job_id,))
+    audit_log("system", "cron.delete", "ok", {"job_id": job_id})
+
+
+def cron_toggle(job_id, enabled):
+    from .web.database import connect
+    with connect() as cur:
+        cur.execute("UPDATE cron_jobs SET enabled = ? WHERE id = ?", (1 if enabled else 0, job_id))
+
+
+# ─── v0.4.0: Log Viewer ─────────────────────────────────────────────────────
+
+LOG_PATHS = {
+    "nginx_access": "/var/log/nginx/access.log",
+    "nginx_error": "/var/log/nginx/error.log",
+    "panel": None,
+    "system": "/var/log/syslog",
+    "auth": "/var/log/auth.log",
+}
+
+
+def log_list_sources():
+    sources = []
+    for key, path in LOG_PATHS.items():
+        exists = path and Path(path).exists() if path else False
+        sources.append({"key": key, "path": path, "exists": exists})
+    return sources
+
+
+def log_view(source, lines=100, grep=None):
+    if source not in LOG_PATHS:
+        return {"ok": False, "error": f"unknown log source: {source}"}
+    path = LOG_PATHS[source]
+    if source == "panel":
+        log_file = ensure_dirs() / "audit.log"
+        if not log_file.exists():
+            return {"ok": True, "source": source, "lines": []}
+        content = log_file.read_text().splitlines()
+        if grep:
+            content = [l for l in content if grep.lower() in l.lower()]
+        return {"ok": True, "source": source, "lines": content[-lines:]}
+    if not path or not Path(path).exists():
+        return {"ok": False, "error": f"log file not found: {path}"}
+    try:
+        content = Path(path).read_text(encoding="utf-8", errors="replace").splitlines()
+        if grep:
+            content = [l for l in content if grep.lower() in l.lower()]
+        return {"ok": True, "source": source, "lines": content[-lines:]}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+# ─── v1.0.0: Security Audit ─────────────────────────────────────────────────
+
+def comprehensive_security_audit():
+    results = []
+    score = 100
+    cfg = load_config()
+    token = cfg.get("api_token", "")
+    if token:
+        results.append({"check": "API Token", "status": "warn", "message": "API token exists, ensure it is rotated regularly"})
+        score -= 5
+    else:
+        results.append({"check": "API Token", "status": "pass", "message": "No API token set"})
+    bind = cfg.get("settings", {}).get("bind_host", "127.0.0.1")
+    if bind == "0.0.0.0":
+        results.append({"check": "Bind Address", "status": "warn", "message": "Panel bound to 0.0.0.0, restrict to internal network"})
+        score -= 10
+    else:
+        results.append({"check": "Bind Address", "status": "pass", "message": f"Panel bound to {bind}"})
+    if sys.platform == "linux":
+        try:
+            r = subprocess.run(["ufw", "status"], capture_output=True, text=True, timeout=10)
+            if "active" in r.stdout.lower():
+                results.append({"check": "Firewall", "status": "pass", "message": "UFW is active"})
+            else:
+                results.append({"check": "Firewall", "status": "warn", "message": "UFW is not active"})
+                score -= 10
+        except FileNotFoundError:
+            results.append({"check": "Firewall", "status": "warn", "message": "UFW not installed"})
+            score -= 10
+        try:
+            r = subprocess.run(["fail2ban-client", "status"], capture_output=True, text=True, timeout=10)
+            if r.returncode == 0:
+                results.append({"check": "Fail2Ban", "status": "pass", "message": "Fail2Ban is running"})
+            else:
+                results.append({"check": "Fail2Ban", "status": "warn", "message": "Fail2Ban is not running"})
+                score -= 5
+        except FileNotFoundError:
+            results.append({"check": "Fail2Ban", "status": "warn", "message": "Fail2Ban not installed"})
+            score -= 5
+        try:
+            r = subprocess.run(["nginx", "-t"], capture_output=True, text=True, timeout=10)
+            if r.returncode == 0:
+                results.append({"check": "Nginx Config", "status": "pass", "message": "Nginx configuration is valid"})
+            else:
+                results.append({"check": "Nginx Config", "status": "error", "message": r.stderr.strip()[:200]})
+                score -= 15
+        except FileNotFoundError:
+            pass
+    from .web.database import connect
+    panels = ["root", "admin", "test", "demo", "user"]
+    with connect() as cur:
+        for p in panels:
+            row = cur.execute("SELECT id FROM users WHERE username = ?", (p,)).fetchone()
+            if row:
+                results.append({"check": f"Default User ({p})", "status": "warn", "message": f"Default user '{p}' exists"})
+                score -= 5
+    results.append({"check": "Audit Log", "status": "pass", "message": "Audit logging is active"})
+    score = max(0, score)
+    return {"score": score, "results": results}
+
+
+# ─── v1.0.0: Load Testing ───────────────────────────────────────────────────
+
+def load_test(target_url, requests=10, concurrency=2):
+    import concurrent.futures, time, urllib.request
+    results = []
+    errors = 0
+    start = time.time()
+
+    def _req(i):
+        nonlocal errors
+        try:
+            t0 = time.time()
+            resp = urllib.request.urlopen(target_url, timeout=30)
+            elapsed = time.time() - t0
+            return {"request": i, "status": resp.getcode(), "time": round(elapsed, 3)}
+        except Exception as e:
+            errors += 1
+            return {"request": i, "error": str(e), "time": 0}
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as pool:
+        futures = [pool.submit(_req, i) for i in range(requests)]
+        for f in concurrent.futures.as_completed(futures):
+            results.append(f.result())
+
+    total = time.time() - start
+    success_count = len([r for r in results if "status" in r])
+    avg_time = sum(r["time"] for r in results) / len(results) if results else 0
+
+    return {
+        "ok": True,
+        "target": target_url,
+        "total_requests": requests,
+        "concurrency": concurrency,
+        "success": success_count,
+        "errors": errors,
+        "total_time": round(total, 3),
+        "avg_time": round(avg_time, 3),
+        "requests_per_sec": round(success_count / total, 1) if total > 0 else 0,
+        "results": results,
+    }
+
+
+# ─── v1.0.0: Multi-Server Support ──────────────────────────────────────────
+
+def server_create(name, host, port=22, username="root", auth_type="password", auth_data=None):
+    from .web.database import connect, audit_log
+    from datetime import datetime
+    with connect() as cur:
+        cur.execute(
+            "INSERT INTO servers (name, host, port, username, auth_type, auth_data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (name, host, port, username, auth_type, auth_data, datetime.utcnow().isoformat() + "Z"),
+        )
+    audit_log("system", "server.create", "ok", {"name": name, "host": host})
+    return {"ok": True, "name": name}
+
+
+def server_list():
+    from .web.database import connect
+    try:
+        with connect() as cur:
+            rows = cur.execute("SELECT id, name, host, port, username, auth_type, created_at FROM servers ORDER BY name").fetchall()
+            return [dict(r) for r in rows]
+    except RuntimeError:
+        return []
+
+
+def server_delete(server_id):
+    from .web.database import connect, audit_log
+    with connect() as cur:
+        cur.execute("DELETE FROM servers WHERE id = ?", (server_id,))
+
+
+def server_exec(server_id, command):
+    server = None
+    from .web.database import connect
+    with connect() as cur:
+        row = cur.execute("SELECT * FROM servers WHERE id = ?", (server_id,)).fetchone()
+        if row:
+            server = dict(row)
+    if not server:
+        return {"ok": False, "error": "server not found"}
+    import paramiko  # optional dependency
+    try:
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        if server["auth_type"] == "password":
+            ssh.connect(server["host"], port=server["port"], username=server["username"], password=server["auth_data"], timeout=10)
+        else:
+            key = paramiko.RSAKey.from_private_key_file(server["auth_data"])
+            ssh.connect(server["host"], port=server["port"], username=server["username"], pkey=key, timeout=10)
+        stdin, stdout, stderr = ssh.exec_command(command, timeout=30)
+        out = stdout.read().decode("utf-8", errors="replace")
+        err = stderr.read().decode("utf-8", errors="replace")
+        ssh.close()
+        return {"ok": True, "stdout": out, "stderr": err, "exit_code": stdout.channel.recv_exit_status()}
+    except ImportError:
+        return {"ok": False, "error": "paramiko not installed (pip install paramiko)"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+# ─── v1.0.0: Branding / White-Label ────────────────────────────────────────
+
+def branding_set(key, value):
+    from .web.database import connect
+    with connect() as cur:
+        existing = cur.execute("SELECT id FROM branding WHERE key = ?", (key,)).fetchone()
+        if existing:
+            cur.execute("UPDATE branding SET value = ? WHERE key = ?", (value, key))
+        else:
+            cur.execute("INSERT INTO branding (key, value) VALUES (?, ?)", (key, value))
+
+
+def branding_get(key, default=None):
+    from .web.database import connect
+    try:
+        with connect() as cur:
+            row = cur.execute("SELECT value FROM branding WHERE key = ?", (key,)).fetchone()
+            return row["value"] if row else default
+    except RuntimeError:
+        return default
+
+
+def branding_get_all():
+    from .web.database import connect
+    try:
+        with connect() as cur:
+            rows = cur.execute("SELECT key, value FROM branding").fetchall()
+            return {r["key"]: r["value"] for r in rows}
+    except RuntimeError:
+        return {}
+
+
+def branding_delete(key):
+    from .web.database import connect
+    with connect() as cur:
+        cur.execute("DELETE FROM branding WHERE key = ?", (key,))

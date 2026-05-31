@@ -247,23 +247,41 @@ pytest tests/ -v
 Use GitHub private vulnerability reporting. Include: affected version,
 reproduction steps, impact, and suggested fix.
 
-## Roadmap
+## What's New in v0.3.0+
 
-### v0.3.0
-- [ ] cPanel/Plesk/HestiaCP migration import
-- [ ] Reseller accounts with plan limits
-- [ ] WordPress one-click installer with DB auto-creation
+### Migration Import
+- Import sites, databases, and emails from cPanel/Plesk/HestiaCP archives.
 
-### v0.4.0
-- [ ] Node.js/Python app deployment with process supervision
-- [ ] Cron job management
-- [ ] Log viewer
+### Reseller Plans
+- Create hosting plans with site/disk/DB/email/bandwidth limits.
+- Assign plans to users; limit enforcement on creation.
 
-### v1.0.0
-- [ ] Complete security audit and threat model
-- [ ] Load testing
-- [ ] Multi-server support
-- [ ] Branding/white-label
+### WordPress One-Click Installer
+- Downloads latest WordPress, generates `wp-config.php`, optionally auto-creates MySQL database.
+
+### App Deployment (Node.js/Python)
+- Deploy Node.js/Python apps with Nginx reverse proxy.
+- Start/stop application processes.
+
+### Cron Job Management
+- Create, delete, toggle cron jobs with custom schedules.
+
+### Log Viewer
+- View Nginx access/error, panel audit, system, and auth logs.
+- Filter by grep expression; adjustable line count.
+
+### Security Audit
+- Comprehensive audit: score (0–100) checking firewall, Fail2Ban, Nginx config, default users, bind address.
+
+### Load Testing
+- Concurrent HTTP load testing tool with real-time results.
+
+### Multi-Server Management
+- Add remote servers (password or SSH key auth).
+- Execute commands remotely via the panel.
+
+### Branding / White-Label
+- Customize panel name and primary color from Settings.
 
 ## License
 

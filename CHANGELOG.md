@@ -1,5 +1,32 @@
 # Changelog
 
+## v0.3.0 (2026-05-31)
+
+### v0.3.0 Features
+- cPanel/Plesk/HestiaCP migration import via file upload.
+- Reseller plans with site/disk/DB/email/bandwidth limits.
+- Plan assignment to users with limit enforcement.
+- WordPress one-click installer with optional DB auto-creation.
+- Panel branding (custom name, primary color) stored in DB.
+
+### v0.4.0 Features
+- Node.js/Python app deployment with Nginx reverse proxy.
+- Process start/stop management.
+- Cron job CRUD with toggle enable/disable.
+
+### v1.0.0 Features
+- Comprehensive security audit (firewall, Fail2Ban, Nginx, default users, bind address).
+- Load testing tool with concurrent request execution.
+- Multi-server management via SSH (password/key auth).
+- Remote command execution.
+- Log viewer with source selection, line count, grep filtering.
+- Branding/white-label (panel name, color) persisted in settings.
+
+### Infrastructure
+- Extended SQLite schema: plans, user_plans, cron_jobs, migrations, node_apps, servers, branding tables.
+- 28 new tests covering all new features (96 total, all passing).
+- All new modules registered in FastAPI app with API endpoints.
+
 ## v0.2.0 (2026-05-31)
 
 ### Web Panel

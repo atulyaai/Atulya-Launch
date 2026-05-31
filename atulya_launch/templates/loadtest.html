@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% set active = "loadtest" %}
+{% block title %}Load Testing - Atulya Launch{% endblock %}
+{% block content %}
+<div class="header">
+    <h2>Load Testing</h2>
+</div>
+
+<div class="section">
+    <div class="card" style="max-width:600px">
+        <div class="form-group">
+            <label>Target URL</label>
+            <input type="url" id="loadTarget" value="http://127.0.0.1:8080" placeholder="http://example.com">
+        </div>
+        <div style="display:flex;gap:16px">
+            <div class="form-group" style="flex:1">
+                <label>Requests</label>
+                <input type="number" id="loadRequests" value="20" min="1" max="1000">
+            </div>
+            <div class="form-group" style="flex:1">
+                <label>Concurrency</label>
+                <input type="number" id="loadConcurrency" value="5" min="1" max="50">
+            </div>
+        </div>
+        <button class="btn btn-primary" onclick="runLoadTest()">Run Test</button>
+    </div>
+</div>
+
+<div class="section" id="loadResults" style="display:none">
+    <div class="section-header"><h3>Results</h3></div>
+    <div class="grid">
+        <div class="card"><h3>Total Requests</h3><div class="value" id="lrTotal">-</div></div>
+        <div class="card"><h3>Success</h3><div class="value success" id="lrSuccess">-</div></div>
+        <div class="card"><h3>Errors</h3><div class="value danger" id="lrErrors">-</div></div>
+        <div class="card"><h3>Total Time</h3><div class="value" id="lrTime">-</div></div>
+        <div class="card"><h3>Avg Response</h3><div class="value" id="lrAvg">-</div></div>
+        <div class="card"><h3>Req/Sec</h3><div class="value" id="lrRps">-</div></div>
+    </div>
+    <table id="lrDetails"><thead><tr><th>#</th><th>Status</th><th>Time (ms)</th></tr></thead><tbody></tbody></table>
+</div>
+
+<script>
+async function runLoadTest() {
+    const target = document.getElementById('loadTarget').value;
+    const requests = document.getElementById('loadRequests').value;
+    const concurrency = document.getElementById('loadConcurrency').value;
+    const el = document.getElementById('loadResults');
+    el.style.display = 'block';
+    el.querySelector('.section-header').innerHTML = '<h3>Running...</h3>';
+    try {
+        const resp = await fetch('/loadtest/run', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: 'target=' + encodeURIComponent(target) + '&requests=' + requests + '&concurrency=' + concurrency,
+        });
+        const data = await resp.json();
+        document.getElementById('lrTotal').textContent = data.total_requests;
+        document.getElementById('lrSuccess').textContent = data.success;
+        document.getElementById('lrErrors').textContent = data.errors;
+        document.getElementById('lrTime').textContent = data.total_time + 's';
+        document.getElementById('lrAvg').textContent = data.avg_time + 's';
+        document.getElementById('lrRps').textContent = data.requests_per_sec;
+        let html = '';
+        for (const r of data.results) {
+            const status = r.status || 'ERR';
+            const time = (r.time * 1000).toFixed(0);
+            html += '<tr><td>' + r.request + '</td><td><span class="badge ' + (status === 200 ? 'badge-success' : 'badge-danger') + '">' + status + '</span></td><td>' + time + '</td></tr>';
+        }
+        document.querySelector('#lrDetails tbody').innerHTML = html;
+        el.querySelector('.section-header').innerHTML = '<h3>Results</h3>';
+    } catch (e) {
+        el.innerHTML = '<div class="alert alert-danger">Error: ' + e.message + '</div>';
+    }
+}
+</script>
+{% endblock %}

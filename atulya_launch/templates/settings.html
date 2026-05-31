@@ -69,6 +69,108 @@
     </div>
 </div>
 
+<div class="section">
+    <div class="section-header">
+        <h3>Plans</h3>
+        {% if user.role == 'admin' %}
+        <button class="btn btn-primary" onclick="document.getElementById('planModal').classList.add('active')">+ Add Plan</button>
+        {% endif %}
+    </div>
+    {% if plans %}
+    <table>
+        <thead><tr><th>Name</th><th>Sites</th><th>Disk (MB)</th><th>DBs</th><th>Emails</th><th>BW (MB)</th><th>Price</th><th>Actions</th></tr></thead>
+        <tbody>
+        {% for p in plans %}
+        <tr>
+            <td><strong>{{ p.name }}</strong></td>
+            <td>{{ p.sites_limit if p.sites_limit > 0 else 'Unlimited' }}</td>
+            <td>{{ p.disk_limit_mb if p.disk_limit_mb > 0 else 'Unlimited' }}</td>
+            <td>{{ p.db_limit if p.db_limit > 0 else 'Unlimited' }}</td>
+            <td>{{ p.email_limit if p.email_limit > 0 else 'Unlimited' }}</td>
+            <td>{{ p.bandwidth_limit_mb if p.bandwidth_limit_mb > 0 else 'Unlimited' }}</td>
+            <td>${{ '%.2f'|format(p.price_monthly) }}</td>
+            <td>
+                <form method="POST" action="/settings/plan/delete" style="display:inline" onsubmit="return confirm('Delete plan {{ p.name }}?')">
+                    <input type="hidden" name="plan_id" value="{{ p.id }}">
+                    <button class="btn btn-danger" style="padding:4px 10px;font-size:12px">Delete</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state" style="padding:20px">No plans defined.</div>
+    {% endif %}
+</div>
+
+<div class="section">
+    <div class="section-header">
+        <h3>Branding</h3>
+    </div>
+    <div class="card" style="max-width:400px">
+        <form method="POST" action="/settings/branding/set">
+            <div class="form-group">
+                <label>Panel Name</label>
+                <input type="text" name="key" value="panel_name" readonly style="display:none">
+                <input type="hidden" name="key" value="panel_name">
+                <input type="text" name="value" value="{{ branding.get('panel_name', 'Atulya Launch') }}" placeholder="Atulya Launch">
+            </div>
+            <button type="submit" class="btn btn-primary">Save</button>
+        </form>
+        <form method="POST" action="/settings/branding/set" style="margin-top:12px">
+            <div class="form-group">
+                <label>Primary Color</label>
+                <input type="hidden" name="key" value="primary_color">
+                <input type="color" name="value" value="{{ branding.get('primary_color', '#6366f1') }}">
+            </div>
+            <button type="submit" class="btn btn-primary">Save Color</button>
+        </form>
+    </div>
+</div>
+
+<div class="modal-overlay" id="planModal">
+    <div class="modal">
+        <h3>Create Plan</h3>
+        <form method="POST" action="/settings/plan/create">
+            <div class="form-group">
+                <label>Plan Name</label>
+                <input type="text" name="name" placeholder="Starter" required>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                <div class="form-group">
+                    <label>Sites Limit (0=unlimited)</label>
+                    <input type="number" name="sites_limit" value="0">
+                </div>
+                <div class="form-group">
+                    <label>Disk Limit MB</label>
+                    <input type="number" name="disk_limit_mb" value="0">
+                </div>
+                <div class="form-group">
+                    <label>Database Limit</label>
+                    <input type="number" name="db_limit" value="0">
+                </div>
+                <div class="form-group">
+                    <label>Email Limit</label>
+                    <input type="number" name="email_limit" value="0">
+                </div>
+                <div class="form-group">
+                    <label>Bandwidth (MB)</label>
+                    <input type="number" name="bandwidth_limit_mb" value="0">
+                </div>
+                <div class="form-group">
+                    <label>Price (Monthly $)</label>
+                    <input type="number" name="price_monthly" value="0" step="0.01">
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" onclick="this.closest('.modal-overlay').classList.remove('active')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Create Plan</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <div class="modal-overlay" id="userModal">
     <div class="modal">
         <h3>Create User</h3>

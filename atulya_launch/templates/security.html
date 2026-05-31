@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% set active = "security" %}
+{% block title %}Security Audit - Atulya Launch{% endblock %}
+{% block content %}
+<div class="header">
+    <h2>Security Audit</h2>
+    <button class="btn btn-primary" onclick="runAudit()">Run Full Audit</button>
+</div>
+
+<div class="section" id="auditResults">
+    <div class="empty-state">Click "Run Full Audit" to perform a comprehensive security check.</div>
+</div>
+
+<script>
+async function runAudit() {
+    const el = document.getElementById('auditResults');
+    el.innerHTML = '<div class="empty-state">Running audit...</div>';
+    try {
+        const resp = await fetch('/security/audit', { method: 'POST' });
+        const data = await resp.json();
+        let html = '<div class="section-header"><h3>Results</h3>';
+        html += '<span class="badge ' + (data.score >= 80 ? 'badge-success' : data.score >= 50 ? 'badge-warning' : 'badge-danger') + '">Score: ' + data.score + '/100</span>';
+        html += '</div><table><thead><tr><th>Check</th><th>Status</th><th>Details</th></tr></thead><tbody>';
+        for (const r of data.results) {
+            const cls = r.status === 'pass' ? 'badge-success' : r.status === 'warn' ? 'badge-warning' : 'badge-danger';
+            html += '<tr><td><strong>' + r.check + '</strong></td><td><span class="badge ' + cls + '">' + (r.status === 'pass' ? 'PASS' : r.status === 'warn' ? 'WARN' : 'FAIL') + '</span></td><td>' + r.message + '</td></tr>';
+        }
+        html += '</tbody></table>';
+        el.innerHTML = html;
+    } catch (e) {
+        el.innerHTML = '<div class="alert alert-danger">Error: ' + e.message + '</div>';
+    }
+}
+</script>
+{% endblock %}

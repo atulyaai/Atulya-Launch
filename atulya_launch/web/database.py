@@ -75,6 +75,72 @@ SCHEMA = """
         status TEXT NOT NULL,
         details TEXT
     );
+    CREATE TABLE IF NOT EXISTS plans (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE NOT NULL,
+        sites_limit INTEGER DEFAULT 0,
+        disk_limit_mb INTEGER DEFAULT 0,
+        db_limit INTEGER DEFAULT 0,
+        email_limit INTEGER DEFAULT 0,
+        bandwidth_limit_mb INTEGER DEFAULT 0,
+        price_monthly REAL DEFAULT 0,
+        created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS user_plans (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        plan_id INTEGER NOT NULL,
+        assigned_at TEXT NOT NULL,
+        expires_at TEXT,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (plan_id) REFERENCES plans(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS cron_jobs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        domain TEXT,
+        command TEXT NOT NULL,
+        schedule TEXT NOT NULL,
+        enabled INTEGER DEFAULT 1,
+        created_at TEXT NOT NULL,
+        last_run TEXT,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS migrations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source TEXT NOT NULL,
+        domain TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        import_data TEXT,
+        created_at TEXT NOT NULL,
+        completed_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS node_apps (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE NOT NULL,
+        domain TEXT,
+        app_type TEXT NOT NULL,
+        entry_point TEXT NOT NULL,
+        port INTEGER,
+        process_id INTEGER,
+        status TEXT DEFAULT 'stopped',
+        created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS servers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE NOT NULL,
+        host TEXT NOT NULL,
+        port INTEGER DEFAULT 22,
+        username TEXT,
+        auth_type TEXT DEFAULT 'password',
+        auth_data TEXT,
+        created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS branding (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        key TEXT UNIQUE NOT NULL,
+        value TEXT NOT NULL
+    );
 """
 
 

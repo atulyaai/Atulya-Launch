@@ -9,19 +9,26 @@
 
 {% if sites %}
 <table>
-    <thead><tr><th>Domain</th><th>Web Root</th><th>Proxy</th><th>PHP</th><th>Actions</th></tr></thead>
+    <thead><tr><th>Domain</th><th>Web Root</th><th>Proxy</th><th>PHP</th><th style="width:130px">Actions</th></tr></thead>
     <tbody>
     {% for domain, site in sites.items() %}
     <tr>
         <td><strong>{{ domain }}</strong></td>
         <td style="font-size:12px">{{ site.web_root }}</td>
         <td>{{ site.proxy_pass or '-' }}</td>
-        <td>{% if site.php %}<span class="badge badge-info">PHP</span>{% else %}-{% endif %}</td>
         <td>
+            {% if site.php %}
+            <span class="badge badge-info">PHP {{ site.php_version or '' }}</span>
+            {% else %}-{% endif %}
+        </td>
+        <td style="white-space:nowrap">
             <a href="/files/{{ domain }}" class="btn btn-ghost" style="padding:4px 10px;font-size:12px">Files</a>
+            {% if site.php %}
+            <button class="btn btn-ghost" style="padding:4px 10px;font-size:12px" onclick="showPhpVersion('{{ domain }}','{{ site.php_version or '8.3' }}')">PHP</button>
+            {% endif %}
             <form method="POST" action="/sites/delete" style="display:inline" onsubmit="return confirm('Delete {{ domain }}?')">
                 <input type="hidden" name="domain" value="{{ domain }}">
-                <button class="btn btn-danger" style="padding:4px 10px;font-size:12px">Delete</button>
+                <button class="btn btn-danger" style="padding:4px 10px;font-size:12px">Del</button>
             </form>
         </td>
     </tr>
@@ -45,7 +52,15 @@
                 <input type="text" name="proxy_pass" placeholder="http://127.0.0.1:3000">
             </div>
             <div class="form-group">
-                <label><input type="checkbox" name="php" value="true"> Enable PHP-FPM</label>
+                <label><input type="checkbox" name="php" value="true" onchange="document.getElementById('phpVersionGroup').style.display=this.checked?'block':'none'"> Enable PHP-FPM</label>
+            </div>
+            <div class="form-group" id="phpVersionGroup" style="display:none">
+                <label>PHP Version</label>
+                <select name="php_version" class="form-control">
+                    <option value="8.1">PHP 8.1</option>
+                    <option value="8.2">PHP 8.2</option>
+                    <option value="8.3" selected>PHP 8.3</option>
+                </select>
             </div>
             <div class="modal-actions">
                 <button type="button" class="btn btn-ghost" onclick="this.closest('.modal-overlay').classList.remove('active')">Cancel</button>
@@ -54,4 +69,36 @@
         </form>
     </div>
 </div>
+
+<div class="modal-overlay" id="phpVersionModal">
+    <div class="modal" style="max-width:400px">
+        <h3>Change PHP Version</h3>
+        <form method="POST" action="/sites/php-version">
+            <input type="hidden" name="domain" id="phpDomainInput">
+            <div class="form-group">
+                <label>PHP Version</label>
+                <select name="php_version" id="phpVersionSelect" class="form-control">
+                    <option value="8.1">PHP 8.1</option>
+                    <option value="8.2">PHP 8.2</option>
+                    <option value="8.3">PHP 8.3</option>
+                </select>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" onclick="document.getElementById('phpVersionModal').classList.remove('active')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function showPhpVersion(domain, current) {
+    document.getElementById('phpDomainInput').value = domain;
+    var sel = document.getElementById('phpVersionSelect');
+    for (var i = 0; i < sel.options.length; i++) {
+        if (sel.options[i].value === current) { sel.selectedIndex = i; break; }
+    }
+    document.getElementById('phpVersionModal').classList.add('active');
+}
+</script>
 {% endblock %}

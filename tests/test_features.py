@@ -5,13 +5,14 @@ import tempfile
 import pytest
 import unittest
 from pathlib import Path
+from typing import Any
 
 from atulya_launch.web.database import init_db, connect, audit_log, reset_db
 
 
 class _DBTestBase(unittest.TestCase):
     """Base class that initializes a test database with a default admin user."""
-    def setUp(self):
+    def setUp(self) -> None:
         reset_db()
         self.tmp = tempfile.TemporaryDirectory()
         self.config_dir = Path(self.tmp.name)
@@ -20,34 +21,41 @@ class _DBTestBase(unittest.TestCase):
         with connect() as cur:
             row = cur.execute("SELECT COUNT(*) as c FROM users").fetchone()
             if row["c"] == 0:
-                create_user("admin", "admin")
+                create_user("admin", "admin", skip_policy=True)
 
-    def tearDown(self):
+    def tearDown(self) -> None:
+        import gc
+        gc.collect()
+        for f in Path(self.tmp.name).glob("panel.db*"):
+            try:
+                f.unlink()
+            except Exception:
+                pass
         self.tmp.cleanup()
 
 
 # ─── v0.3.0: Migration Import ────────────────────────────────────────────────
 
 class TestMigrations(_DBTestBase):
-    def test_migration_sources_defined(self):
+    def test_migration_sources_defined(self) -> None:
         from atulya_launch.core import MIGRATION_SOURCES
         assert "cpanel" in MIGRATION_SOURCES
         assert "plesk" in MIGRATION_SOURCES
         assert "hestiacp" in MIGRATION_SOURCES
 
-    def test_migration_import_missing_file(self):
+    def test_migration_import_missing_file(self) -> None:
         from atulya_launch.core import migration_import
         result = migration_import("cpanel", "/nonexistent/file.tar.gz")
         assert result["ok"] is False
         assert "not found" in result["error"]
 
-    def test_migration_import_unknown_source(self):
+    def test_migration_import_unknown_source(self) -> None:
         from atulya_launch.core import migration_import
         result = migration_import("unknown_source", "test.tar")
         assert result["ok"] is False
         assert "unknown source" in result["error"]
 
-    def test_migration_list(self):
+    def test_migration_list(self) -> None:
         from atulya_launch.core import migration_list
         result = migration_list()
         assert isinstance(result, list)
@@ -56,7 +64,7 @@ class TestMigrations(_DBTestBase):
 # ─── v0.3.0: Reseller Plans ──────────────────────────────────────────────────
 
 class TestPlans(_DBTestBase):
-    def test_plan_create_and_list(self):
+    def test_plan_create_and_list(self) -> None:
         from atulya_launch.core import plan_create, plan_list, plan_delete
         plan_create("test_plan", sites_limit=5, disk_limit_mb=1024, db_limit=3, email_limit=10, price_monthly=9.99)
         plans = plan_list()
@@ -67,7 +75,7 @@ class TestPlans(_DBTestBase):
                 plan_delete(p["id"])
                 break
 
-    def test_plan_delete(self):
+    def test_plan_delete(self) -> None:
         from atulya_launch.core import plan_create, plan_list, plan_delete
         plan_create("del_test")
         plans = plan_list()
@@ -79,7 +87,7 @@ class TestPlans(_DBTestBase):
         names = [p["name"] for p in plans]
         assert "del_test" not in names
 
-    def test_plan_assign(self):
+    def test_plan_assign(self) -> None:
         from atulya_launch.core import plan_create, plan_list, plan_assign, plan_user_get, plan_delete
         plan_create("assign_plan")
         plan_id = None
@@ -97,7 +105,7 @@ class TestPlans(_DBTestBase):
         assert user_plan is not None
         plan_delete(plan_id)
 
-    def test_check_user_limits(self):
+    def test_check_user_limits(self) -> None:
         from atulya_launch.core import check_user_limits
         with connect() as cur:
             user = cur.execute("SELECT id FROM users LIMIT 1").fetchone()
@@ -108,7 +116,7 @@ class TestPlans(_DBTestBase):
 # ─── v0.3.0: WordPress Installer ─────────────────────────────────────────────
 
 class TestWordPress(_DBTestBase):
-    def test_wordpress_creates_site(self):
+    def test_wordpress_creates_site(self) -> None:
         from atulya_launch.core import wordpress_install, site_delete
         domain = "wp-test-" + os.urandom(4).hex() + ".example.com"
         result = wordpress_install(domain)
@@ -120,7 +128,7 @@ class TestWordPress(_DBTestBase):
 # ─── v0.4.0: App Deployment ──────────────────────────────────────────────────
 
 class TestDeploy(_DBTestBase):
-    def test_deploy_app_and_list(self):
+    def test_deploy_app_and_list(self) -> None:
         from atulya_launch.core import deploy_app, deploy_list, deploy_delete
         name = "test-app-" + os.urandom(4).hex()
         result = deploy_app(name, name + ".example.com", app_type="node", entry_point="server.js", port=4000)
@@ -133,7 +141,7 @@ class TestDeploy(_DBTestBase):
                 deploy_delete(a["id"])
                 break
 
-    def test_deploy_delete(self):
+    def test_deploy_delete(self) -> None:
         from atulya_launch.core import deploy_app, deploy_list, deploy_delete
         name = "del-app-" + os.urandom(4).hex()
         deploy_app(name, name + ".example.com")
@@ -146,7 +154,7 @@ class TestDeploy(_DBTestBase):
         names = [a["name"] for a in apps]
         assert name not in names
 
-    def test_deploy_start_stop(self):
+    def test_deploy_start_stop(self) -> None:
         from atulya_launch.core import deploy_app, deploy_list, deploy_start, deploy_stop, deploy_delete
         name = "ctl-app-" + os.urandom(4).hex()
         deploy_app(name, name + ".example.com", app_type="node", entry_point="app.js", port=4001)
@@ -167,7 +175,7 @@ class TestDeploy(_DBTestBase):
 # ─── v0.4.0: Cron Jobs ───────────────────────────────────────────────────────
 
 class TestCron(_DBTestBase):
-    def test_cron_create_and_list(self):
+    def test_cron_create_and_list(self) -> None:
         from atulya_launch.core import cron_create, cron_list, cron_delete
         with connect() as cur:
             user = cur.execute("SELECT id FROM users LIMIT 1").fetchone()
@@ -177,7 +185,7 @@ class TestCron(_DBTestBase):
         for j in jobs:
             cron_delete(j["id"])
 
-    def test_cron_toggle(self):
+    def test_cron_toggle(self) -> None:
         from atulya_launch.core import cron_create, cron_list, cron_toggle, cron_delete
         with connect() as cur:
             user = cur.execute("SELECT id FROM users LIMIT 1").fetchone()
@@ -194,7 +202,7 @@ class TestCron(_DBTestBase):
                 cron_delete(j["id"])
                 break
 
-    def test_cron_delete(self):
+    def test_cron_delete(self) -> None:
         from atulya_launch.core import cron_create, cron_list, cron_delete
         with connect() as cur:
             user = cur.execute("SELECT id FROM users LIMIT 1").fetchone()
@@ -211,7 +219,7 @@ class TestCron(_DBTestBase):
 # ─── v0.4.0: Log Viewer ──────────────────────────────────────────────────────
 
 class TestLogs(unittest.TestCase):
-    def test_log_sources_list(self):
+    def test_log_sources_list(self) -> None:
         from atulya_launch.core import log_list_sources
         sources = log_list_sources()
         assert isinstance(sources, list)
@@ -219,13 +227,13 @@ class TestLogs(unittest.TestCase):
         assert "nginx_access" in keys
         assert "panel" in keys
 
-    def test_log_view_panel(self):
+    def test_log_view_panel(self) -> None:
         from atulya_launch.core import log_view
         result = log_view("panel", lines=10)
         assert "ok" in result
         assert isinstance(result.get("lines"), list)
 
-    def test_log_view_unknown_source(self):
+    def test_log_view_unknown_source(self) -> None:
         from atulya_launch.core import log_view
         result = log_view("nonexistent_source")
         assert result["ok"] is False
@@ -235,7 +243,7 @@ class TestLogs(unittest.TestCase):
 # ─── v1.0.0: Security Audit ──────────────────────────────────────────────────
 
 class TestSecurityAudit(_DBTestBase):
-    def test_comprehensive_security_audit_returns_results(self):
+    def test_comprehensive_security_audit_returns_results(self) -> None:
         from atulya_launch.core import comprehensive_security_audit
         result = comprehensive_security_audit()
         assert "score" in result
@@ -243,7 +251,7 @@ class TestSecurityAudit(_DBTestBase):
         assert isinstance(result["results"], list)
         assert len(result["results"]) > 0
 
-    def test_security_audit_score_range(self):
+    def test_security_audit_score_range(self) -> None:
         from atulya_launch.core import comprehensive_security_audit
         result = comprehensive_security_audit()
         assert 0 <= result["score"] <= 100
@@ -252,13 +260,13 @@ class TestSecurityAudit(_DBTestBase):
 # ─── v1.0.0: Load Testing ────────────────────────────────────────────────────
 
 class TestLoadTest(unittest.TestCase):
-    def test_load_test_runs(self):
+    def test_load_test_runs(self) -> None:
         from atulya_launch.core import load_test
         result = load_test("http://127.0.0.1:1", requests=2, concurrency=1)
         assert "ok" in result
         assert result["total_requests"] == 2
 
-    def test_load_test_summary_keys(self):
+    def test_load_test_summary_keys(self) -> None:
         from atulya_launch.core import load_test
         result = load_test("http://127.0.0.1:2", requests=3, concurrency=1)
         for key in ("target", "total_requests", "concurrency", "success", "errors", "total_time", "avg_time", "requests_per_sec"):
@@ -268,7 +276,7 @@ class TestLoadTest(unittest.TestCase):
 # ─── v1.0.0: Multi-Server ────────────────────────────────────────────────────
 
 class TestServers(_DBTestBase):
-    def test_server_create_and_list(self):
+    def test_server_create_and_list(self) -> None:
         from atulya_launch.core import server_create, server_list, server_delete
         name = "test-server-" + os.urandom(4).hex()
         result = server_create(name, "192.168.1.1", port=22, username="root", auth_type="password", auth_data="secret")
@@ -281,7 +289,7 @@ class TestServers(_DBTestBase):
                 server_delete(s["id"])
                 break
 
-    def test_server_list_returns_list(self):
+    def test_server_list_returns_list(self) -> None:
         from atulya_launch.core import server_list
         result = server_list()
         assert isinstance(result, list)
@@ -290,19 +298,19 @@ class TestServers(_DBTestBase):
 # ─── v1.0.0: Branding ────────────────────────────────────────────────────────
 
 class TestBranding(_DBTestBase):
-    def test_branding_set_and_get(self):
+    def test_branding_set_and_get(self) -> None:
         from atulya_launch.core import branding_set, branding_get, branding_delete
         branding_set("test_key", "test_value")
         val = branding_get("test_key")
         assert val == "test_value"
         branding_delete("test_key")
 
-    def test_branding_get_default(self):
+    def test_branding_get_default(self) -> None:
         from atulya_launch.core import branding_get
         val = branding_get("nonexistent_key", default="fallback")
         assert val == "fallback"
 
-    def test_branding_get_all(self):
+    def test_branding_get_all(self) -> None:
         from atulya_launch.core import branding_set, branding_get_all, branding_delete
         branding_set("k1", "v1")
         branding_set("k2", "v2")
@@ -312,7 +320,7 @@ class TestBranding(_DBTestBase):
         branding_delete("k1")
         branding_delete("k2")
 
-    def test_branding_delete(self):
+    def test_branding_delete(self) -> None:
         from atulya_launch.core import branding_set, branding_get, branding_delete
         branding_set("temp_key", "temp_val")
         branding_delete("temp_key")

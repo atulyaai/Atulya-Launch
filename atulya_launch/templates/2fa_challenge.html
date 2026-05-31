@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Two-Factor Authentication - Atulya Launch</title>
+    <style>
+        :root { --bg: #0f1117; --bg-card: #1a1d27; --border: #2d3040; --text: #e4e6ed; --text-dim: #8b8fa3; --primary: #6366f1; --primary-hover: #818cf8; --danger: #ef4444; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+        .login-box { width: 380px; }
+        .login-brand { text-align: center; margin-bottom: 32px; }
+        .login-brand h1 { font-size: 28px; color: var(--primary); margin-bottom: 4px; }
+        .login-brand p { color: var(--text-dim); font-size: 14px; }
+        .login-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 32px; }
+        .form-group { margin-bottom: 20px; }
+        .form-group label { display: block; font-size: 13px; color: var(--text-dim); margin-bottom: 6px; font-weight: 500; }
+        .form-group input { width: 100%; padding: 12px 14px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 14px; text-align: center; letter-spacing: 8px; font-weight: 600; }
+        .form-group input:focus { outline: none; border-color: var(--primary); }
+        .btn { width: 100%; padding: 12px; border-radius: 8px; border: none; cursor: pointer; font-size: 14px; font-weight: 600; background: var(--primary); color: white; transition: background 0.15s; }
+        .btn:hover { background: var(--primary-hover); }
+        .btn-ghost { display: block; text-align: center; margin-top: 16px; color: var(--text-dim); font-size: 13px; text-decoration: none; }
+        .btn-ghost:hover { color: var(--text); }
+        .alert { padding: 10px 14px; border-radius: 8px; margin-bottom: 20px; font-size: 13px; background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3); color: var(--danger); }
+        .hint { text-align: center; margin-top: 16px; font-size: 13px; color: var(--text-dim); }
+    </style>
+</head>
+<body>
+    <div class="login-box">
+        <div class="login-brand">
+            <h1>Atulya Launch</h1>
+            <p>Two-Factor Authentication</p>
+        </div>
+        <div class="login-card">
+            {% if error %}
+            <div class="alert">Invalid code. Please try again.</div>
+            {% endif %}
+            <p class="hint">Enter the 6-digit code from your authenticator app.</p>
+            <form method="POST" action="/login/2fa">
+                <div class="form-group">
+                    <label>Authentication Code</label>
+                    <input type="text" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required autofocus placeholder="000000">
+                </div>
+                <button type="submit" class="btn">Verify</button>
+            </form>
+            <a href="/logout" class="btn-ghost">Cancel and log out</a>
+        </div>
+    </div>
+</body>
+</html>

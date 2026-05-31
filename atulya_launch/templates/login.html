@@ -30,7 +30,9 @@
             <p>Server Hosting Panel</p>
         </div>
         <div class="login-card">
-            {% if error %}
+            {% if error == 'rate_limited' %}
+            <div class="alert">Too many login attempts. Please wait 5 minutes.</div>
+            {% elif error %}
             <div class="alert">Invalid username or password.</div>
             {% endif %}
             <form method="POST" action="/login">

@@ -1,11 +1,11 @@
-"""DNS management API (BIND9)."""
+"""SQLite-backed DNS management API with platform-driver apply support."""
 
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from atulya_launch import utils
 from atulya_launch.web.auth import get_current_user
+from atulya_launch.web import dns_service
 
 router = APIRouter(prefix="/api/dns", tags=["dns"])
 
@@ -18,7 +18,8 @@ class ZoneCreate(BaseModel):
 class RecordCreate(BaseModel):
     type: str
     name: str
-    content: str
+    content: str | None = None
+    value: str | None = None
     ttl: int = 3600
     priority: Optional[int] = None
 
@@ -26,127 +27,80 @@ class RecordCreate(BaseModel):
 class RecordUpdate(BaseModel):
     name: Optional[str] = None
     content: Optional[str] = None
+    value: Optional[str] = None
     ttl: Optional[int] = None
     priority: Optional[int] = None
 
 
-def _zones_file():
-    return utils.CONFIG_DIR / "dns" / "zones.json"
-
-
-def _load_zones() -> dict:
-    p = _zones_file()
-    if not p.exists():
-        return {}
-    import json
-    return json.loads(p.read_text())
-
-
-def _save_zones(zones: dict):
-    p = _zones_file()
-    p.parent.mkdir(parents=True, exist_ok=True)
-    import json
-    p.write_text(json.dumps(zones, indent=2))
-
-
-def _next_record_id(records: list) -> int:
-    if not records:
-        return 1
-    return max(r.get("id", 0) for r in records) + 1
-
-
 @router.get("/zones")
 def list_zones(user: dict = Depends(get_current_user)):
-    return {"zones": _load_zones()}
+    return {"zones": dns_service.list_zones()}
 
 
 @router.post("/zones")
 def create_zone(body: ZoneCreate, user: dict = Depends(get_current_user)):
-    zones = _load_zones()
-    if body.domain in zones:
+    try:
+        zone = dns_service.create_zone(body.domain, body.nameservers)
+    except ValueError as exc:
         raise HTTPException(status_code=409, detail="Zone already exists")
-    ns = body.nameservers or [f"ns1.{body.domain}", f"ns2.{body.domain}"]
-    zones[body.domain] = {
-        "domain": body.domain,
-        "nameservers": ns,
-        "records": [],
-        "created_at": utils.datetime.datetime.now().isoformat() if hasattr(utils, "datetime") else __import__("datetime").datetime.now().isoformat(),
-    }
-    _save_zones(zones)
-    return {"zone": zones[body.domain]}
+    return {"zone": zone, "apply": dns_service.apply_zone(body.domain)}
+
+
+@router.delete("/zones/{zone}")
+def delete_zone(zone: str, user: dict = Depends(get_current_user)):
+    if not dns_service.delete_zone(zone):
+        raise HTTPException(status_code=404, detail="Zone not found")
+    return {"status": "deleted", "zone": zone}
 
 
 @router.get("/zones/{zone}/records")
 def list_records(zone: str, user: dict = Depends(get_current_user)):
-    zones = _load_zones()
-    if zone not in zones:
+    try:
+        zone_data = dns_service.get_zone(zone)
+    except KeyError:
         raise HTTPException(status_code=404, detail="Zone not found")
-    return {"records": zones[zone].get("records", [])}
+    return {"records": zone_data.get("records", [])}
 
 
 @router.post("/zones/{zone}/records")
 def add_record(zone: str, body: RecordCreate, user: dict = Depends(get_current_user)):
-    zones = _load_zones()
-    if zone not in zones:
-        raise HTTPException(status_code=404, detail="Zone not found")
-    if body.type not in ("A", "AAAA", "CNAME", "MX", "TXT", "NS", "SRV", "PTR"):
+    content = body.content if body.content is not None else body.value
+    if not content:
+        raise HTTPException(status_code=400, detail="Record content is required")
+    try:
+        record = dns_service.add_record(zone, body.type, body.name, content, body.ttl)
+    except ValueError:
         raise HTTPException(status_code=400, detail="Invalid record type")
-    records = zones[zone].get("records", [])
-    rec = {
-        "id": _next_record_id(records),
-        "type": body.type,
-        "name": body.name,
-        "content": body.content,
-        "ttl": body.ttl,
-    }
-    if body.priority is not None:
-        rec["priority"] = body.priority
-    records.append(rec)
-    zones[zone]["records"] = records
-    _save_zones(zones)
-    return {"record": rec}
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Zone not found")
+    return {"record": record, "apply": dns_service.apply_zone(zone)}
 
 
 @router.put("/zones/{zone}/records/{record_id}")
 def update_record(zone: str, record_id: int, body: RecordUpdate, user: dict = Depends(get_current_user)):
-    zones = _load_zones()
-    if zone not in zones:
-        raise HTTPException(status_code=404, detail="Zone not found")
-    records = zones[zone].get("records", [])
-    for rec in records:
-        if rec.get("id") == record_id:
-            if body.name is not None:
-                rec["name"] = body.name
-            if body.content is not None:
-                rec["content"] = body.content
-            if body.ttl is not None:
-                rec["ttl"] = body.ttl
-            if body.priority is not None:
-                rec["priority"] = body.priority
-            _save_zones(zones)
-            return {"record": rec}
-    raise HTTPException(status_code=404, detail="Record not found")
+    content = body.content if body.content is not None else body.value
+    try:
+        record = dns_service.update_record(zone, record_id, name=body.name, value=content, ttl=body.ttl)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return {"record": record, "apply": dns_service.apply_zone(zone)}
 
 
 @router.delete("/zones/{zone}/records/{record_id}")
 def delete_record(zone: str, record_id: int, user: dict = Depends(get_current_user)):
-    zones = _load_zones()
-    if zone not in zones:
+    try:
+        deleted = dns_service.delete_record(zone, record_id)
+    except KeyError:
         raise HTTPException(status_code=404, detail="Zone not found")
-    records = zones[zone].get("records", [])
-    zones[zone]["records"] = [r for r in records if r.get("id") != record_id]
-    if len(zones[zone]["records"]) == len(records):
+    if not deleted:
         raise HTTPException(status_code=404, detail="Record not found")
-    _save_zones(zones)
-    return {"status": "deleted", "id": record_id}
+    return {"status": "deleted", "id": record_id, "apply": dns_service.apply_zone(zone)}
 
 
 @router.post("/zones/{zone}/reload")
 def reload_zone(zone: str, user: dict = Depends(get_current_user)):
-    zones = _load_zones()
-    if zone not in zones:
+    try:
+        apply_result = dns_service.apply_zone(zone)
+    except KeyError:
         raise HTTPException(status_code=404, detail="Zone not found")
-    result = utils.run_command(["rndc", "reload", zone], check=False)
-    if result and result.returncode == 0:
-        return {"status": "reloaded", "zone": zone}
-    return {"status": "reload_sent", "zone": zone, "note": "rndc may not be available"}
+    return {"status": "planned" if apply_result["dry_run"] else "applied", "zone": zone, "apply": apply_result}

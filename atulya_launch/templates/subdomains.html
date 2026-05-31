@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% set active = "subdomains" %}
+{% block title %}Subdomains - Atulya Launch{% endblock %}
+{% block content %}
+<div class="header">
+    <h2>Subdomains & Parked Domains</h2>
+    <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" onclick="document.getElementById('subModal').classList.add('active')">+ Subdomain</button>
+        <button class="btn btn-ghost" onclick="document.getElementById('parkModal').classList.add('active')">+ Park Domain</button>
+    </div>
+</div>
+
+<div class="section">
+    <div class="section-header"><h3>Subdomains</h3></div>
+    {% if subdomains %}
+    <table>
+        <thead><tr><th>Subdomain</th><th>Domain</th><th>Target</th><th>Web Root</th><th>Actions</th></tr></thead>
+        <tbody>
+        {% for key, s in subdomains.items() %}
+        <tr>
+            <td><strong>{{ s.subdomain }}</strong></td>
+            <td>{{ s.domain }}</td>
+            <td>{{ s.target or '-' }}</td>
+            <td style="font-size:12px">{{ s.web_root }}</td>
+            <td>
+                <form method="POST" action="/subdomains/delete" style="display:inline" onsubmit="return confirm('Delete {{ s.full }}?')">
+                    <input type="hidden" name="domain" value="{{ s.domain }}">
+                    <input type="hidden" name="subdomain" value="{{ s.subdomain }}">
+                    <button class="btn btn-danger" style="padding:4px 10px;font-size:12px">Delete</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">No subdomains.</div>
+    {% endif %}
+</div>
+
+<div class="section">
+    <div class="section-header"><h3>Parked Domains</h3></div>
+    {% if parked %}
+    <table>
+        <thead><tr><th>Parked Domain</th><th>Points To</th><th>Actions</th></tr></thead>
+        <tbody>
+        {% for domain, info in parked.items() %}
+        <tr>
+            <td><strong>{{ domain }}</strong></td>
+            <td>{{ info.primary }}</td>
+            <td>
+                <form method="POST" action="/subdomains/park/delete" style="display:inline" onsubmit="return confirm('Unpark {{ domain }}?')">
+                    <input type="hidden" name="parked_domain" value="{{ domain }}">
+                    <button class="btn btn-danger" style="padding:4px 10px;font-size:12px">Unpark</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">No parked domains.</div>
+    {% endif %}
+</div>
+
+<div class="modal-overlay" id="subModal">
+    <div class="modal" style="max-width:450px">
+        <h3>Create Subdomain</h3>
+        <form method="POST" action="/subdomains/create">
+            <div class="form-group">
+                <label>Domain</label>
+                <select name="domain" class="form-control" required>
+                    {% for d in domains %}
+                    <option value="{{ d }}">{{ d }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Subdomain</label>
+                <input type="text" name="subdomain" placeholder="blog" required>
+            </div>
+            <div class="form-group">
+                <label>Proxy Target (optional)</label>
+                <input type="text" name="target" placeholder="http://127.0.0.1:4000">
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" onclick="this.closest('.modal-overlay').classList.remove('active')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Create</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal-overlay" id="parkModal">
+    <div class="modal" style="max-width:450px">
+        <h3>Park Domain</h3>
+        <p style="font-size:13px;color:var(--text-dim);margin-bottom:12px">A parked domain shows the same content as the primary domain.</p>
+        <form method="POST" action="/subdomains/park/create">
+            <div class="form-group">
+                <label>Primary Domain</label>
+                <select name="primary_domain" class="form-control" required>
+                    {% for d in domains %}
+                    <option value="{{ d }}">{{ d }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Parked Domain</label>
+                <input type="text" name="parked_domain" placeholder="my-other-domain.com" required>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" onclick="this.closest('.modal-overlay').classList.remove('active')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Park Domain</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

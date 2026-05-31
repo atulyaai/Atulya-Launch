@@ -86,14 +86,20 @@
     <aside class="sidebar">
         <div class="sidebar-brand">
             <h1>Atulya Launch</h1>
-            <small>Hosting Panel v0.2.0</small>
+            <small>Hosting Panel v1.0.0</small>
         </div>
         <nav>
             <a href="/dashboard" class="{% if active == 'dashboard' %}active{% endif %}"><span class="icon">&#9632;</span> Dashboard</a>
             <a href="/sites" class="{% if active == 'sites' %}active{% endif %}"><span class="icon">&#9998;</span> Websites</a>
             <a href="/dns" class="{% if active == 'dns' %}active{% endif %}"><span class="icon">&#9960;</span> DNS</a>
             <a href="/email" class="{% if active == 'email' %}active{% endif %}"><span class="icon">&#9993;</span> Email</a>
+            <a href="/mail" class="{% if active == 'mail' %}active{% endif %}"><span class="icon">&#9993;</span> Mail Server</a>
+            <a href="/webmail" class="{% if active == 'webmail' %}active{% endif %}"><span class="icon">&#9993;</span> Webmail</a>
             <a href="/databases" class="{% if active == 'databases' %}active{% endif %}"><span class="icon">&#9881;</span> Databases</a>
+            <a href="/subdomains" class="{% if active == 'subdomains' %}active{% endif %}"><span class="icon">&#128736;</span> Subdomains</a>
+            <a href="/redirects" class="{% if active == 'redirects' %}active{% endif %}"><span class="icon">&#128279;</span> Redirects</a>
+            <a href="/ipdeny" class="{% if active == 'ipdeny' %}active{% endif %}"><span class="icon">&#128683;</span> IP Deny</a>
+            <a href="/hotlink" class="{% if active == 'hotlink' %}active{% endif %}"><span class="icon">&#128274;</span> Hotlink</a>
             <a href="/ssl" class="{% if active == 'ssl' %}active{% endif %}"><span class="icon">&#128274;</span> SSL</a>
             <a href="/files" class="{% if active == 'files' %}active{% endif %}"><span class="icon">&#128193;</span> Files</a>
             <a href="/backups" class="{% if active == 'backups' %}active{% endif %}"><span class="icon">&#128190;</span> Backups</a>

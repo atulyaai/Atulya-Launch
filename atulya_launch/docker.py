@@ -1,10 +1,12 @@
+"""Docker container management helpers for Atulya Launch."""
 import json
 from pathlib import Path
+from typing import Any
 
 from . import core
 
 
-DOCKER_APPS = {
+DOCKER_APPS: dict[str, dict[str, Any]] = {
     "nginx": {"image": "nginx:alpine", "ports": {"80": "80", "443": "443"}, "description": "Nginx web server"},
     "mysql": {"image": "mysql:8", "ports": {"3306": "3306"}, "env": {"MYSQL_ROOT_PASSWORD": "changeme"}, "description": "MySQL database"},
     "postgres": {"image": "postgres:16", "ports": {"5432": "5432"}, "env": {"POSTGRES_PASSWORD": "changeme"}, "description": "PostgreSQL database"},
@@ -18,21 +20,23 @@ DOCKER_APPS = {
 }
 
 
-def docker_available():
+def docker_available() -> bool:
+    """Check if Docker is available on the system."""
     if core.get_platform() != "linux":
         return False
     result = core.run_cmd(["docker", "--version"], check=False)
     return result.returncode == 0
 
 
-def docker_list_containers(all_containers=False):
-    cmd = ["docker", "ps", "--format", "{{json .}}"]
+def docker_list_containers(all_containers: bool = False) -> list[dict[str, Any]]:
+    """List Docker containers in JSON format."""
+    cmd: list[str] = ["docker", "ps", "--format", "{{json .}}"]
     if all_containers:
         cmd.append("-a")
     result = core.run_cmd(cmd, check=False)
     if result.returncode != 0:
         return []
-    containers = []
+    containers: list[dict[str, Any]] = []
     for line in result.stdout.strip().splitlines():
         if line.strip():
             try:
@@ -42,11 +46,12 @@ def docker_list_containers(all_containers=False):
     return containers
 
 
-def docker_list_images():
+def docker_list_images() -> list[dict[str, Any]]:
+    """List Docker images in JSON format."""
     result = core.run_cmd(["docker", "images", "--format", "{{json .}}"], check=False)
     if result.returncode != 0:
         return []
-    images = []
+    images: list[dict[str, Any]] = []
     for line in result.stdout.strip().splitlines():
         if line.strip():
             try:
@@ -56,8 +61,9 @@ def docker_list_images():
     return images
 
 
-def docker_run(name, image, ports=None, env=None, volumes=None, detach=True):
-    cmd = ["docker", "run", "-d", "--name", name, "--restart", "unless-stopped"]
+def docker_run(name: str, image: str, ports: dict[str, str] | None = None, env: dict[str, str] | None = None, volumes: dict[str, str] | None = None, detach: bool = True) -> dict[str, Any]:
+    """Run a new Docker container."""
+    cmd: list[str] = ["docker", "run", "-d", "--name", name, "--restart", "unless-stopped"]
     if ports:
         for host_port, container_port in ports.items():
             cmd.extend(["-p", f"{host_port}:{container_port}"])
@@ -72,18 +78,21 @@ def docker_run(name, image, ports=None, env=None, volumes=None, detach=True):
     return {"ok": result.returncode == 0, "output": result.stdout.strip(), "error": result.stderr.strip()}
 
 
-def docker_stop(name):
+def docker_stop(name: str) -> dict[str, bool]:
+    """Stop a running Docker container."""
     result = core.run_cmd(["docker", "stop", name], check=False)
     return {"ok": result.returncode == 0}
 
 
-def docker_start(name):
+def docker_start(name: str) -> dict[str, bool]:
+    """Start a stopped Docker container."""
     result = core.run_cmd(["docker", "start", name], check=False)
     return {"ok": result.returncode == 0}
 
 
-def docker_remove(name, force=False):
-    cmd = ["docker", "rm"]
+def docker_remove(name: str, force: bool = False) -> dict[str, bool]:
+    """Remove a Docker container."""
+    cmd: list[str] = ["docker", "rm"]
     if force:
         cmd.append("-f")
     cmd.append(name)
@@ -91,11 +100,13 @@ def docker_remove(name, force=False):
     return {"ok": result.returncode == 0}
 
 
-def docker_logs(name, lines=100):
+def docker_logs(name: str, lines: int = 100) -> str:
+    """Fetch logs from a Docker container."""
     result = core.run_cmd(["docker", "logs", "--tail", str(lines), name], check=False)
     return result.stdout + result.stderr
 
 
-def docker_pull(image):
+def docker_pull(image: str) -> dict[str, Any]:
+    """Pull a Docker image."""
     result = core.run_cmd(["docker", "pull", image], check=False)
     return {"ok": result.returncode == 0, "output": result.stdout.strip()}

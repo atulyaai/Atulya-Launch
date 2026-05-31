@@ -1,6 +1,11 @@
-__version__ = "0.3.0"
+"""Atulya Launch - hosting panel package init.
 
-ATULYA_TOOLS = [
+Exports version constant and list of Atulya tool names.
+"""
+
+__version__: str = "1.0.0"
+
+ATULYA_TOOLS: list[str] = [
     "Atulya-All-File-Converter",
     "Atulya-Data-Scruber",
     "Atulya-Office",
@@ -12,4 +17,4 @@ ATULYA_TOOLS = [
     "Atulya-Launch",
 ]
 
-ATULYA_ORG = "atulyaai"
+ATULYA_ORG: str = "atulyaai"

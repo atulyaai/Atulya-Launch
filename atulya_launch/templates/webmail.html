@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% set active = "webmail" %}
+{% block title %}Webmail - Atulya Launch{% endblock %}
+{% block content %}
+<div class="header">
+    <h2>Webmail</h2>
+</div>
+
+<div class="card">
+    {% if status.installed %}
+    <p><span class="badge badge-success">&#10003; Roundcube is installed</span></p>
+    <p style="margin-top:16px">
+        <a href="/webmail" target="_blank" class="btn btn-primary"><span>&#9993;</span> Open Webmail</a>
+    </p>
+    {% else %}
+    <p>Roundcube webmail is not yet installed. Click the button below to install it.</p>
+    <p style="margin-top:16px">
+        <form method="POST" action="/webmail/install">
+            <button type="submit" class="btn btn-primary">Install Roundcube</button>
+        </form>
+    </p>
+    {% endif %}
+</div>
+{% endblock %}

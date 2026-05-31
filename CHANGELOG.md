@@ -1,6 +1,20 @@
 # Changelog
 
-## v0.3.0 (2026-05-31)
+## v1.0.0 (2026-05-31)
+
+### Production Hardening
+- Rate limiter on login (5 attempts/5min per IP, 429 response).
+- Account lockout (10 failed attempts/15min per username).
+- Password policy enforcement (min 8 chars, uppercase+lowercase+digit).
+- Max 5 concurrent sessions per user (oldest evicted).
+- Session cleanup on page load.
+- Global exception handler (no stack traces, `PANEL_DEBUG` env var).
+- `safe_write()` with umask 022 and chmod on Linux.
+- Database schema versioning (`schema_version` table, `SCHEMA_VERSION=2`).
+- `sanitize_filename()` with path traversal prevention.
+- Secure cookie attributes (httponly, samesite=lax, secure with `PANEL_HTTPS`).
+- Graceful CLI serve with `--workers`, `--https`, `--log-level`, `proxy_headers=True`, `server_header=False`.
+- `PANEL_HOST`, `PANEL_PORT`, `PANEL_WORKERS`, `PANEL_HTTPS`, `PANEL_DEBUG`, `ADMIN_PASS` env vars.
 
 ### v0.3.0 Features
 - cPanel/Plesk/HestiaCP migration import via file upload.

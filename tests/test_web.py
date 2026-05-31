@@ -1,33 +1,45 @@
+"""Integration tests for the web application."""
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 
 
 class WebAppTests(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         self.config_dir = Path(self.tmp.name)
 
-    def tearDown(self):
-        self.tmp.cleanup()
+    def tearDown(self) -> None:
+        import gc
+        gc.collect()
+        for f in Path(self.tmp.name).glob("panel.db*"):
+            try:
+                f.unlink()
+            except Exception:
+                pass
+        try:
+            self.tmp.cleanup()
+        except Exception:
+            pass
 
-    def _make_app(self):
+    def _make_app(self) -> Any:
         from atulya_launch.web.database import init_db, connect, reset_db
         reset_db()
         init_db(self.config_dir, force=True)
         from atulya_launch.web.auth import create_user
-        create_user("admin", "admin123", "admin")
+        create_user("admin", "admin123", "admin", skip_policy=True)
         from atulya_launch.web.app import create_app
         return create_app()
 
-    def _get_client(self, app):
+    def _get_client(self, app: Any) -> Any:
         try:
             from httpx import AsyncClient, ASGITransport
         except ImportError:
             self.skipTest("httpx not installed")
         return AsyncClient(transport=ASGITransport(app=app), base_url="http://test", follow_redirects=True)
 
-    def test_login_page_renders(self):
+    def test_login_page_renders(self) -> None:
         import asyncio
         app = self._make_app()
         client = self._get_client(app)
@@ -37,7 +49,7 @@ class WebAppTests(unittest.TestCase):
             self.assertIn("Atulya Launch", resp.text)
         asyncio.run(run())
 
-    def test_login_redirects_unauthenticated(self):
+    def test_login_redirects_unauthenticated(self) -> None:
         import asyncio
         app = self._make_app()
         client = self._get_client(app)
@@ -47,7 +59,7 @@ class WebAppTests(unittest.TestCase):
             self.assertIn("/login", resp.headers.get("location", ""))
         asyncio.run(run())
 
-    def test_login_post_valid(self):
+    def test_login_post_valid(self) -> None:
         import asyncio
         app = self._make_app()
         client = self._get_client(app)
@@ -57,7 +69,7 @@ class WebAppTests(unittest.TestCase):
             self.assertIn("session_token", resp.cookies)
         asyncio.run(run())
 
-    def test_login_post_invalid(self):
+    def test_login_post_invalid(self) -> None:
         import asyncio
         app = self._make_app()
         client = self._get_client(app)
@@ -67,7 +79,7 @@ class WebAppTests(unittest.TestCase):
             self.assertIn("error=1", resp.headers.get("location", ""))
         asyncio.run(run())
 
-    def test_dashboard_after_login(self):
+    def test_dashboard_after_login(self) -> None:
         import asyncio
         app = self._make_app()
         client = self._get_client(app)
@@ -79,7 +91,7 @@ class WebAppTests(unittest.TestCase):
             self.assertIn("Dashboard", resp2.text)
         asyncio.run(run())
 
-    def test_api_login_valid(self):
+    def test_api_login_valid(self) -> None:
         import asyncio
         app = self._make_app()
         client = self._get_client(app)
@@ -90,7 +102,7 @@ class WebAppTests(unittest.TestCase):
             self.assertIn("token", data)
         asyncio.run(run())
 
-    def test_api_login_invalid(self):
+    def test_api_login_invalid(self) -> None:
         import asyncio
         app = self._make_app()
         client = self._get_client(app)
@@ -99,7 +111,7 @@ class WebAppTests(unittest.TestCase):
             self.assertEqual(resp.status_code, 401)
         asyncio.run(run())
 
-    def test_api_sites_requires_auth(self):
+    def test_api_sites_requires_auth(self) -> None:
         import asyncio
         app = self._make_app()
         client = self._get_client(app)
@@ -108,7 +120,7 @@ class WebAppTests(unittest.TestCase):
             self.assertEqual(resp.status_code, 401)
         asyncio.run(run())
 
-    def test_api_sites_with_token(self):
+    def test_api_sites_with_token(self) -> None:
         import asyncio
         app = self._make_app()
         client = self._get_client(app)
@@ -119,7 +131,7 @@ class WebAppTests(unittest.TestCase):
             self.assertEqual(resp.status_code, 200)
         asyncio.run(run())
 
-    def test_logout(self):
+    def test_logout(self) -> None:
         import asyncio
         app = self._make_app()
         client = self._get_client(app)

@@ -220,7 +220,25 @@ for i in {1..30}; do
         break
     fi
     sleep 1
-    [[ $i -eq 30 ]] && { record FAIL "panel_bind" "no response after 30s"; write_report; exit 1; }
+    [[ $i -eq 30 ]] && {
+        record FAIL "panel_bind" "no response after 30s"
+        # Dump service diagnostics so the cause is visible in the report
+        warn "panel did not bind; dumping diagnostics..."
+        echo "" >> "$VALIDATOR_LOG"
+        echo "--- systemctl status atulya-launch ---" >> "$VALIDATOR_LOG"
+        systemctl status atulya-launch --no-pager -l >> "$VALIDATOR_LOG" 2>&1 || true
+        echo "" >> "$VALIDATOR_LOG"
+        echo "--- journalctl -u atulya-launch -n 100 ---" >> "$VALIDATOR_LOG"
+        journalctl -u atulya-launch -n 100 --no-pager >> "$VALIDATOR_LOG" 2>&1 || true
+        echo "" >> "$VALIDATOR_LOG"
+        echo "--- systemd unit contents ---" >> "$VALIDATOR_LOG"
+        cat /etc/systemd/system/atulya-launch.service >> "$VALIDATOR_LOG" 2>&1 || true
+        echo "" >> "$VALIDATOR_LOG"
+        echo "--- python venv probe ---" >> "$VALIDATOR_LOG"
+        ls -la /opt/atulya-launch/venv/bin/python 2>&1 >> "$VALIDATOR_LOG" || true
+        /opt/atulya-launch/venv/bin/python -c "import atulya_launch; print('OK', atulya_launch.__file__)" >> "$VALIDATOR_LOG" 2>&1 || true
+        write_report; exit 1
+    }
 done
 
 # Login

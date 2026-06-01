@@ -145,6 +145,11 @@ class FileWebServerDriver:
     service: PlannedServiceDriver
     dry_run: bool = True
 
+    # The binary used to test configuration syntax. Different web servers
+    # use different invocations; callers can override via subclasses.
+    test_command: tuple[str, ...] = ("nginx", "-t")
+    detect_command: tuple[str, ...] = ("nginx", "-v")
+
     def apply_site(self, domain: str, config: str) -> ApplyResult:
         target = self.config_dir / f"{domain}.conf"
         if not self.dry_run:
@@ -159,6 +164,14 @@ class FileWebServerDriver:
 
     def reload(self) -> ApplyResult:
         return self.service.reload(self.name)
+
+    def test_config(self) -> ApplyResult:
+        """Validate the web server configuration without reloading."""
+        return run_command(list(self.test_command), self.dry_run)
+
+    def detect(self) -> ApplyResult:
+        """Detect which web server binary is installed."""
+        return run_command(list(self.detect_command), self.dry_run)
 
 
 @dataclass(slots=True)
@@ -397,4 +410,121 @@ php_admin_flag[log_errors] = on
     def status(self, version: str) -> ApplyResult:
         """Check PHP-FPM service status."""
         service_name = f"php{version}-fpm"
+
+
+@dataclass(slots=True)
+class PlannedDatabaseDriver:
+    """Database backend scaffold (MySQL/MariaDB and PostgreSQL)."""
+
+    service: PlannedServiceDriver
+    dry_run: bool = True
+
+    def _mysql_command(self, sql: str) -> list[str]:
+        return ["mysql", "-e", sql]
+
+    def _mysqldump_command(self, name: str) -> list[str]:
+        return ["mysqldump", "--single-transaction", name]
+
+    def _postgres_create_command(self, name: str) -> list[str]:
+        return ["sudo", "-u", "postgres", "createdb", name]
+
+    def _postgres_drop_command(self, name: str) -> list[str]:
+        return ["sudo", "-u", "postgres", "dropdb", name]
+
+    def _postgres_dump_command(self, name: str) -> list[str]:
+        return ["sudo", "-u", "postgres", "pg_dump", name]
+
+    def create(self, name: str, db_type: str = "mysql") -> ApplyResult:
+        if db_type in ("mysql", "mariadb"):
+            return run_command(self._mysql_command(f"CREATE DATABASE IF NOT EXISTS `{name}`"), self.dry_run)
+        if db_type == "postgresql":
+            return run_command(self._postgres_create_command(name), self.dry_run)
+        return ApplyResult(ok=False, action="db.create", message=f"unsupported db type: {db_type}")
+
+    def drop(self, name: str, db_type: str = "mysql") -> ApplyResult:
+        if db_type in ("mysql", "mariadb"):
+            return run_command(self._mysql_command(f"DROP DATABASE IF EXISTS `{name}`"), self.dry_run)
+        if db_type == "postgresql":
+            return run_command(self._postgres_drop_command(name), self.dry_run)
+        return ApplyResult(ok=False, action="db.drop", message=f"unsupported db type: {db_type}")
+
+    def backup(self, name: str, dest: Path, db_type: str = "mysql") -> ApplyResult:
+        if db_type in ("mysql", "mariadb"):
+            return run_command([*self._mysqldump_command(name), ">", str(dest)], self.dry_run)
+        if db_type == "postgresql":
+            return run_command([*self._postgres_dump_command(name), ">", str(dest)], self.dry_run)
+        return ApplyResult(ok=False, action="db.backup", message=f"unsupported db type: {db_type}")
+
+
+@dataclass(slots=True)
+class PlannedSslDriver:
+    """SSL certificate scaffold (Let's Encrypt via certbot)."""
+
+    service: PlannedServiceDriver
+    dry_run: bool = True
+
+    def issue_letsencrypt(
+        self,
+        domain: str,
+        email: str,
+        *,
+        staging: bool = False,
+        webroot: Path | None = None,
+    ) -> ApplyResult:
+        command: list[str] = ["certbot", "certonly", "--non-interactive", "--agree-tos", "--email", email, "-d", domain]
+        if staging:
+            command += ["--staging"]
+        if webroot is not None:
+            command += ["--webroot", "-w", str(webroot)]
+        else:
+            command += ["--nginx"]
+        result = run_command(command, self.dry_run)
+        reload = self.service.reload(self._web_server_for(domain))
+        return ApplyResult(
+            ok=result.ok,
+            action="ssl.issue_letsencrypt",
+            changed=result.changed,
+            message=result.message,
+            commands=[*result.commands, *reload.commands],
+        )
+
+    def renew(self, domain: str) -> ApplyResult:
+        result = run_command(["certbot", "renew", "--cert-name", domain], self.dry_run)
+        reload = self.service.reload(self._web_server_for(domain))
+        return ApplyResult(
+            ok=result.ok,
+            action="ssl.renew",
+            changed=result.changed,
+            message=result.message,
+            commands=[*result.commands, *reload.commands],
+        )
+
+    def _web_server_for(self, domain: str) -> str:
+        """Return the web server service name to reload after cert changes."""
+        return "nginx"
+
+
+@dataclass(slots=True)
+class PlannedFirewallDriver:
+    """Firewall scaffold (UFW on Linux)."""
+
+    dry_run: bool = True
+
+    def status(self) -> ApplyResult:
+        return run_command(["ufw", "status"], self.dry_run)
+
+    def enable(self) -> ApplyResult:
+        return run_command(["ufw", "--force", "enable"], self.dry_run)
+
+    def disable(self) -> ApplyResult:
+        return run_command(["ufw", "disable"], self.dry_run)
+
+    def allow(self, port: int, proto: str = "tcp") -> ApplyResult:
+        return run_command(["ufw", "allow", f"{port}/{proto}"], self.dry_run)
+
+    def deny(self, port: int, proto: str = "tcp") -> ApplyResult:
+        return run_command(["ufw", "deny", f"{port}/{proto}"], self.dry_run)
+
+    def list_rules(self) -> ApplyResult:
+        return run_command(["ufw", "status", "numbered"], self.dry_run)
         return self.service.status(service_name)

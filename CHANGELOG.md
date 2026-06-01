@@ -1,5 +1,48 @@
 # Changelog
 
+## v1.0.1-validate (unreleased)
+
+### Phase 2 - Driver Layer Consolidation
+- Added `DatabaseDriver`, `SslDriver`, `FirewallDriver` protocols to `drivers/base.py`.
+- Added `test_config()` and `detect()` to `WebServerDriver`.
+- New implementations in `drivers/common.py`:
+  - `PlannedDatabaseDriver` (mysql/postgres create/drop/backup)
+  - `PlannedSslDriver` (certbot issue/renew with staging flag)
+  - `PlannedFirewallDriver` (ufw status/enable/disable/allow/deny/list_rules)
+- `LinuxDriver` now exposes `databases`, `ssl`, `firewall` alongside the existing drivers.
+- `core.py` refactored: `nginx_apply_and_reload`, `database_create/drop/backup`,
+  `ssl_issue_letsencrypt/renew`, `firewall_status/list_rules/enable/disable/allow/deny`,
+  `fail2ban_restart`, `service_state`, `detect_web_server` now route through
+  `get_platform_driver()` instead of calling `subprocess`/`run_command` directly.
+  Public signatures are unchanged.
+- `drivers/mail_service.py` (Postfix/Dovecot/DKIM) now uses
+  `driver.services.reload/restart` for all systemd/launchd interactions.
+- 15 new driver tests added (DB plans, SSL plans with/without staging,
+  firewall allow/deny/enable, webserver `test_config`/`detect`).
+- Total test count: 124 (was 109), all passing.
+
+### Clean-Host Install Validator
+- `scripts/validate-install.sh`: 380-line validator that runs on a clean Ubuntu
+  host and exercises the full hosting lifecycle: site create -> DNS zone ->
+  SSL cert (staging) -> mailbox -> database -> backup -> restore -> security
+  audit -> SSH terminal. Writes a markdown report to `/tmp/atulya-validate-report.md`.
+- Validated against the real FastAPI route surface; all 16 endpoints the
+  validator calls are mounted.
+
+### GitHub Actions
+- `.github/workflows/ci.yml`: matrix CI on Ubuntu 22.04/24.04 x Python 3.11/3.12,
+  runs lint + unit tests on every push and PR.
+- `.github/workflows/validate-install.yml`: full clean-host install + lifecycle
+  validator on `release: published`, weekly cron, and PRs touching install
+  scripts. Uploads `validation-report.md` as artifact, comments back on
+  release/PRs.
+
+### Documentation
+- `README.md` status block and v1.0.0 feature list updated to match the real
+  state of the codebase (596 routes, 87 API modules, 109+ tests).
+- `ROADMAP.md` rewritten with 6 phases matching actual gaps. Clean-host
+  install validation is now Phase 1 (gate to everything else).
+
 ## v1.0.0 (2026-05-31)
 
 ### Production Hardening

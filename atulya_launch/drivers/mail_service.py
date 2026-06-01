@@ -1,4 +1,10 @@
-"""Postfix/Dovecot mail server configuration and management."""
+"""Postfix/Dovecot mail server configuration and management.
+
+Service restarts and reloads are routed through the platform driver so the
+panel can later support non-systemd init systems. Direct `utils.run_command`
+is still used for one-shot admin tools (postmap, opendkim-genkey) where
+no driver abstraction adds value.
+"""
 
 from __future__ import annotations
 
@@ -19,18 +25,35 @@ DKIM_DIR = Path("/etc/opendkim")
 DKIM_KEYS_DIR = DKIM_DIR / "keys"
 
 
+def _driver(dry_run: bool = False):
+    """Return the platform driver, lazily imported to avoid cycles."""
+    from . import get_platform_driver
+    return get_platform_driver(dry_run=dry_run)
+
+
 def is_mail_available() -> bool:
     """Check if Postfix/Dovecot are installed."""
-    return utils.is_linux() and (
-        utils.run_command(["which", "postfix"], check=False).returncode == 0 or
-        utils.run_command(["which", "postconf"], check=False).returncode == 0
+    if not utils.is_linux():
+        return False
+    return (
+        utils.run_command(["which", "postfix"], check=False).returncode == 0
+        or utils.run_command(["which", "postconf"], check=False).returncode == 0
     )
 
 
 def get_mail_status() -> dict[str, Any]:
     """Get the current status of mail services."""
-    postfix_active = utils.run_command(["systemctl", "is-active", "postfix"], check=False).returncode == 0
-    dovecot_active = utils.run_command(["systemctl", "is-active", "dovecot"], check=False).returncode == 0
+    if not utils.is_linux():
+        return {
+            "postfix_installed": False,
+            "dovecot_installed": False,
+            "postfix_active": False,
+            "dovecot_active": False,
+            "config_dir": str(POSTFIX_CONF),
+        }
+    driver = _driver(dry_run=False)
+    postfix_active = driver.services.status("postfix").ok
+    dovecot_active = driver.services.status("dovecot").ok
     return {
         "postfix_installed": utils.run_command(["which", "postfix"], check=False).returncode == 0,
         "dovecot_installed": utils.run_command(["which", "dovecot"], check=False).returncode == 0,
@@ -100,7 +123,8 @@ mailbox_size_limit = 0
     if utils.is_linux():
         POSTFIX_CONF.mkdir(parents=True, exist_ok=True)
         (POSTFIX_CONF / "main.cf").write_text(config)
-        utils.run_command(["postfix", "reload"], check=False)
+        # Use the service driver for reload (systemd on Linux, launchd on macOS)
+        _driver(dry_run=False).services.reload("postfix")
     audit_event("mail.postfix_config", "ok", {"domain": domain})
     return {"ok": True, "domain": domain}
 
@@ -169,7 +193,7 @@ service auth {{
         DOVECOT_CONF.mkdir(parents=True, exist_ok=True)
         (DOVECOT_CONF / "dovecot.conf").write_text(config)
         utils.run_command(["doveconf", "-n"], check=False)
-        utils.run_command(["systemctl", "restart", "dovecot"], check=False)
+        _driver(dry_run=False).services.restart("dovecot")
     audit_event("mail.dovecot_config", "ok", {"domain": domain})
     return {"ok": True, "domain": domain}
 
@@ -210,7 +234,8 @@ def add_mailbox(domain: str, mailbox: str, password: str) -> dict[str, Any]:
         except (OSError, PermissionError):
             pass
 
-        utils.run_command(["postfix", "reload"], check=False)
+        driver = _driver(dry_run=False)
+        driver.services.reload("postfix")
         utils.run_command(["doveconf", "-n"], check=False)
 
     audit_event("mail.add_mailbox", "ok", {"domain": domain, "mailbox": mailbox})
@@ -243,7 +268,7 @@ def remove_mailbox(domain: str, mailbox: str) -> dict[str, Any]:
             import shutil
             shutil.rmtree(vhost_dir)
 
-        utils.run_command(["postfix", "reload"], check=False)
+        _driver(dry_run=False).services.reload("postfix")
 
     audit_event("mail.remove_mailbox", "ok", {"domain": domain, "mailbox": mailbox})
     return {"ok": True, "domain": domain, "mailbox": mailbox}
@@ -319,8 +344,9 @@ UserID opendkim:opendkim
     signing_table = DKIM_DIR / "SigningTable"
     signing_table.write_text(f"*@{domain} {selector}._domainkey.{domain}\n")
 
-    utils.run_command(["systemctl", "restart", "opendkim"], check=False)
-    utils.run_command(["postfix", "reload"], check=False)
+    driver = _driver(dry_run=False)
+    driver.services.restart("opendkim")
+    driver.services.reload("postfix")
 
     txt_record = ""
     if txt_path.exists():

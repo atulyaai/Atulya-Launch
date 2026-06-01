@@ -1,0 +1,158 @@
+name: validate-install
+
+# Run the clean-host install validator on every release tag and weekly.
+# The validator:
+#   1. Spins up a fresh Ubuntu 22.04 runner
+#   2. Runs scripts/install-server.sh to install the panel + dependencies
+#   3. Drives the panel through a full hosting lifecycle:
+#      site create -> DNS zone -> SSL cert (staging) -> mailbox -> database
+#      -> backup -> restore -> security audit -> SSH terminal
+#   4. Writes a markdown report to artifacts
+#
+# Triggers:
+#   - release published (a v* tag)
+#   - manual workflow_dispatch
+#   - weekly schedule (Mondays 06:00 UTC) so we catch silent regressions
+#   - push to main touching scripts/install-server.sh or scripts/validate-install.sh
+#
+# Required secrets:
+#   - None (uses Let's Encrypt STAGING so no real certs are issued)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/install-server.sh"
+      - "scripts/validate-install.sh"
+      - "scripts/install.py"
+      - "pyproject.toml"
+      - "requirements.txt"
+      - ".github/workflows/validate-install.yml"
+  pull_request:
+    paths:
+      - "scripts/install-server.sh"
+      - "scripts/validate-install.sh"
+      - ".github/workflows/validate-install.yml"
+  release:
+    types: [published]
+  schedule:
+    # Mondays 06:00 UTC
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      skip_install:
+        description: "Skip install-server.sh (panel already running)"
+        type: boolean
+        default: false
+      ubuntu_version:
+        description: "Ubuntu version to test on"
+        type: choice
+        options: ["22.04", "24.04"]
+        default: "22.04"
+
+concurrency:
+  group: validate-install-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: clean-host install + lifecycle on ubuntu-${{ inputs.ubuntu_version || '22.04' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Detect Ubuntu version
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.ubuntu_version }}" ]; then
+            echo "version=${{ inputs.ubuntu_version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=22.04" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Using Ubuntu ${{ steps.ver.outputs.version }}"
+
+      - name: Show environment
+        run: |
+          uname -a
+          cat /etc/os-release
+          lsb_release -a 2>/dev/null || true
+          df -h /
+
+      - name: Install shellcheck
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck
+
+      - name: Lint validator + installer
+        run: |
+          set -e
+          shellcheck --severity=warning scripts/validate-install.sh
+          shellcheck --severity=warning scripts/install-server.sh
+          echo "shellcheck OK"
+
+      - name: Run unit tests (fast gate)
+        run: |
+          python3 -m pip install --upgrade pip --quiet
+          python3 -m pip install -e ".[all]" --quiet
+          python3 -m pytest tests/ -q --tb=short
+
+      - name: Run clean-host install validator
+        env:
+          PANEL_PORT: "8080"
+          PANEL_HOST: "127.0.0.1"
+          TEST_DOMAIN: "validation.atulya.local"
+          SKIP_INSTALL: ${{ github.event.inputs.skip_install == 'true' && '1' || '0' }}
+        run: |
+          set -o pipefail
+          echo "127.0.0.1 validation.atulya.local" | sudo tee -a /etc/hosts
+          sudo bash scripts/validate-install.sh \
+            --skip-install "${SKIP_INSTALL}" \
+            --report "${GITHUB_WORKSPACE}/validation-report.md" \
+            --domain "${TEST_DOMAIN}" 2>&1 | tee validator.log
+          EXIT=$?
+          echo "validator exit: $EXIT"
+          if [ -f validation-report.md ]; then
+            echo "--- report head ---"
+            head -40 validation-report.md
+            echo "--- report tail ---"
+            tail -40 validation-report.md
+          fi
+          exit $EXIT
+
+      - name: Upload validation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-report-${{ github.sha }}
+          path: |
+            validation-report.md
+            validator.log
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Fail job on validator hard-fail
+        if: always()
+        run: |
+          if [ -f validation-report.md ]; then
+            FAILS=$(grep -c '| FAIL |' validation-report.md || true)
+            echo "hard failures: ${FAILS}"
+            if [ "${FAILS}" -gt 0 ]; then
+              echo "::error::Clean-host install validator reported ${FAILS} hard failure(s). See validation-report.md artifact."
+              exit 2
+            fi
+          else
+            echo "::warning::No validation-report.md produced; check validator.log"
+            exit 2
+          fi
+
+      - name: Comment on release / PR
+        if: always() && (github.event_name == 'release' || github.event_name == 'pull_request')
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: validate-install
+          path: validation-report.md

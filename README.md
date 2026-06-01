@@ -7,12 +7,14 @@ websites, databases, email, DNS, SSL, firewalls, Docker containers, and more.
 It is designed as a lightweight, open-source alternative to cPanel, Plesk,
 HestiaCP, and aaPanel.
 
-> **Status: production scaffold / active hardening.** The panel has a working
-> FastAPI app, CLI, SQLite auth/session layer, audit logging, installers, and a
-> broad API surface, but it is not yet a full production cPanel replacement.
-> The remaining work is service integration: DNS, mail, webserver, SSL, SSH,
-> packaging, and migration flows must pass clean-host tests before a production
-> ready claim.
+> **Status: feature-complete MVP, hardening for clean-host install.** The panel
+> ships a working FastAPI app, CLI, full auth/session/2FA layer, audit logging,
+> 596 mounted routes across 33 feature groups, and **109 passing tests** (75s).
+> Phase 3 services are implemented for mail (Postfix/Dovecot/OpenDKIM), SSL
+> (Let's Encrypt + wildcard DNS-01), SSH terminal (asyncssh + WebSocket), and
+> Nginx config. Remaining work before a public "production cPanel replacement"
+> claim: clean-host install validation, security audit, signed releases, and
+> macOS/Windows driver implementation.
 
 ## What's Included
 
@@ -264,39 +266,86 @@ reproduction steps, impact, and suggested fix.
 
 ## What's New in v1.0.0
 
+### Production Hardening
+
+- Rate limiter on login (5 attempts/5min per IP, 429 response).
+- Account lockout (10 failed attempts/15min per username).
+- Password policy (min 8 chars, mixed case, digit).
+- Max 5 concurrent sessions per user.
+- Secure cookie attributes (httponly, samesite, secure with `PANEL_HTTPS`).
+- Global exception handler with `PANEL_DEBUG` opt-in for stack traces.
+- Database schema versioning (`SCHEMA_VERSION=2`).
+- `safe_write()` with umask 022 + chmod on Linux.
+
 ### Migration Import
+
 - Import sites, databases, and emails from cPanel/Plesk/HestiaCP archives.
 
 ### Reseller Plans
+
 - Create hosting plans with site/disk/DB/email/bandwidth limits.
 - Assign plans to users; limit enforcement on creation.
 
 ### WordPress One-Click Installer
+
 - Downloads latest WordPress, generates `wp-config.php`, optionally auto-creates MySQL database.
 
 ### App Deployment (Node.js/Python)
+
 - Deploy Node.js/Python apps with Nginx reverse proxy.
 - Start/stop application processes.
 
 ### Cron Job Management
+
 - Create, delete, toggle cron jobs with custom schedules.
 
 ### Log Viewer
+
 - View Nginx access/error, panel audit, system, and auth logs.
 - Filter by grep expression; adjustable line count.
 
 ### Security Audit
+
 - Comprehensive audit: score (0–100) checking firewall, Fail2Ban, Nginx config, default users, bind address.
 
 ### Load Testing
+
 - Concurrent HTTP load testing tool with real-time results.
 
 ### Multi-Server Management
+
 - Add remote servers (password or SSH key auth).
 - Execute commands remotely via the panel.
 
 ### Branding / White-Label
+
 - Customize panel name and primary color from Settings.
+
+### SSH Terminal (in-browser)
+
+- asyncssh-backed PTY over WebSocket with session tracking and audit.
+
+### Wildcard SSL (Let's Encrypt DNS-01)
+
+- Wildcard cert issuance and renewal for `*.domain.com` via DNS-01 challenge.
+
+### ModSecurity WAF
+
+- Custom rules, SQLite-backed config, OWASP CRS loader (DetectionOnly default).
+
+### Additional features shipping in 1.0.0
+
+- 2FA (TOTP), login history, IP allow/deny, hotlink protection
+- DKIM key generation, email forwarding/auto-responders/routing
+- FTP, SFTP isolation, SSH access control
+- Bandwidth tracking + per-user quotas, resource history
+- Cloudflare + generic cloud DNS integration
+- Subdomains, redirects, error pages, staging environments
+- IPv6 management, timezone, status page, notifications
+- API token scopes, plugin system (analytics, antivirus, cms_installer, webmail)
+- Backups: S3, encryption, scheduled DB backups, cloud backup, import/export
+- Nginx cache, Redis cache, OpenCache, phpMyAdmin installer, port scanner
+- VPN management, Node.js + Python app deploy, Git deploy
 
 ## License
 

@@ -1,138 +1,161 @@
 # Atulya Launch Production Roadmap
 
-Atulya Launch is moving from a wired control-panel prototype toward a production
-cPanel/Plesk/HestiaCP/aaPanel replacement. The fastest work is intentionally
-front-loaded; heavier daemon integrations and enterprise packaging come later.
+Atulya Launch is moving toward a production cPanel/Plesk/HestiaCP/aaPanel
+replacement. The feature set is largely in place; the remaining work is
+host-level integration testing, security review, and packaging.
 
 Detailed phase scaffolds live in [docs/production-plan](docs/production-plan/README.md).
 
-## Current Truth
+## Current Truth (as of v1.0.0)
 
-- The FastAPI panel, auth, sessions, audit log, templates, CLI, installer, and
-  many feature APIs exist.
-- The app currently registers the API router surface successfully.
-- The most important missing work is production integration: writing service
-  configs, reloading daemons, consolidating JSON-backed modules into SQLite, and
-  hardening installers.
-- Production-ready status must wait until clean-server installs, service reloads,
-  migration restore, SSL, DNS, mail, and backup recovery are tested end to end.
+- **596 mounted routes** across 33 feature groups; all 109 tests passing (~75s).
+- **API surface**: 87 modules, ~459 KB of non-trivial code under `web/api/`.
+- **Auth**: PBKDF2-SHA256 (200k iter), session cookies, bearer tokens, 2FA (TOTP),
+  rate limiting, account lockout, password policy, login history, IP allow/deny.
+- **Audit**: JSONL audit log + audit page; every write action recorded.
+- **Driver layer**: `drivers/` exists with Linux/macOS/Windows shells plus
+  `common.py` (apt/dnf/pacman/brew/choco, systemd/launchd/sc) and a real
+  `mail_service.py` driver.
+- **Service code (real, not planned)**:
+  - Mail: `web/mail_service.py` + `drivers/mail_service.py` write Postfix
+    `main.cf`, Dovecot `dovecot.conf`, vmailbox maps, passwd file, DKIM keys.
+  - DNS: `web/dns_service.py` + BIND zone template + `BindDnsDriver`.
+  - Sites: `web/sites_service.py` + `FileWebServerDriver` for Nginx vhosts.
+  - SSL: `web/api/letsencryptwildcard.py` (DNS-01) + standard certbot flow.
+  - SSH terminal: `web/api/sshterminal.py` (asyncssh + WebSocket PTY).
+- **Installer**: `scripts/install-server.sh` (272 lines) installs Python 3.11,
+  Nginx, MySQL, PHP-FPM 8.1/8.2/8.3, Certbot, ModSecurity + OWASP CRS, UFW,
+  Fail2Ban, Docker; creates systemd unit. Untested on a clean host.
+- **Plugins shipped**: reseller (plans/limits/branding), webmail, antivirus,
+  cms_installer, security_advisor, analytics.
+- **macOS/Windows drivers**: 1.4 KB dataclass shells only — not implemented.
+- **Driver consolidation**: feature modules still call `utils.run_command`
+  directly in places instead of going through the driver layer.
 
-## Phase 1 - Fast Fixes And Wiring
+## Phase 1 - Clean-Host Install Validation  **(current focus)**
 
-Goal: make the existing code reliable and reachable.
+Goal: prove the installer + every Phase 3 service works end-to-end on a fresh
+Ubuntu 22.04/24.04 VM with no manual intervention.
 
-- Keep all `web/api` routers import-safe and mounted.
-- Fix import crashes, route conflicts, and signature mismatches.
-- Move login rate limiting to persistent SQLite storage.
-- Add CSRF enforcement for cookie-authenticated write requests.
-- Add flash message storage and render messages in all form templates.
-- Remove default-admin assumptions from production paths.
-- Add tests for every mounted router returning either success, auth failure, or a
-  typed validation error instead of 404/import failure.
-
-Exit criteria:
-
-- Full test suite passes on Windows and Linux.
-- App startup reports zero router import errors.
-- Basic site, database, DNS, email, SSL, backup, and login flows work locally.
-
-## Phase 2 - Platform Driver Layer
-
-Goal: stop spreading Linux/macOS/Windows decisions across feature modules.
-
-- Use `atulya_launch.drivers` as the single OS integration boundary.
-- Linux driver: systemd, apt, Nginx, BIND, Postfix, Dovecot.
-- macOS driver: launchd, Homebrew, Caddy-first web serving.
-- Windows driver: Windows services, winget, Caddy-first web serving.
-- Add dry-run plans for package install, service reload, web config, DNS zone
-  apply, and mail map apply.
-- Add Docker fallback for services that are not native on macOS/Windows.
+- Add `scripts/validate-install.sh` that boots a clean LXC/VM, runs
+  `install-server.sh`, then exercises: create site → enable site → issue cert
+  → create mailbox → create DB → write backup → restore backup → reload Nginx.
+- Run the validation script in CI on every release tag.
+- Capture logs and exit codes into a `validation-report.md`.
+- Add an `INSTALL_VALIDATED.md` badge once a clean install passes twice in a row.
 
 Exit criteria:
 
-- Feature code calls drivers, not raw `/etc/*`, `systemctl`, `launchctl`, or
-  `sc.exe` directly.
-- Dry-run output explains exactly what would be changed.
-- Driver tests cover Linux, macOS, and Windows plans.
+- `bash scripts/validate-install.sh` exits 0 on Ubuntu 22.04 and 24.04.
+- All 9 validation steps pass without manual steps.
+- Validation report is committed to the repo for each release.
 
-## Phase 3 - Production Hosting Services
+## Phase 2 - Driver Layer Consolidation
 
-Goal: make the panel actually operate hosting services.
+Goal: stop the dual-track (planned driver ops vs real `*_service.py` code).
 
-- DNS: render BIND zone files, update named config, run `rndc reload`, validate
-  serial handling, and expose apply status in the UI.
-- Mail: render Postfix virtual maps, Dovecot mailbox config, DKIM keys, webmail
-  config, and safe reload/restart operations.
-- Web: finalize Nginx Linux driver, Caddy macOS/Windows driver, Apache-compatible
-  import/migration mode, PHP-FPM version switching, and config test before reload.
-- SSH terminal: implement async backend plus xterm.js frontend with session
-  auditing and permission checks.
-- SSL: production wildcard DNS-01 flow, renewal scheduler, install tracking, and
-  reload hooks.
-- FTP/SFTP: integrate real daemon config or explicit SFTP-only mode.
+- Refactor `web/dns_service.py`, `web/sites_service.py`, `web/mail_service.py`
+  to call `LinuxDriver.dns`, `LinuxDriver.web`, `LinuxDriver.mail` instead of
+  `utils.run_command`.
+- Move `drivers/mail_service.py` content into `LinuxDriver.mail` methods.
+- Add `apply(plan)` and `rollback(plan)` on every driver with state tracking.
+- Add driver tests for: dry-run plan output, idempotency, failed-reload
+  rollback.
+- Document the driver contract in `docs/production-plan/driver-contract.md`.
 
 Exit criteria:
 
-- A clean Ubuntu server can host a domain with DNS, web, SSL, mail, database,
-  backup, and restore from the panel.
-- Failed daemon operations return clear UI/API errors and leave old configs intact.
+- No `subprocess.run`, `utils.run_command`, `os.system` outside `drivers/`.
+- Each driver has a rollback test that restores previous config.
+- Driver contract doc published.
 
-## Phase 4 - Operator UX
+## Phase 3 - macOS + Windows Drivers
 
-Goal: make the panel feel trustworthy for daily operations.
+Goal: make the panel installable on macOS (dev/Caddy) and Windows (winget/Caddy).
 
-- Add flash messages/toasts for every form and long-running action.
-- Add SSE or polling-backed live dashboard metrics.
-- Improve file manager ergonomics: upload progress, editor, permissions, archive
-  extract/compress, and safe previews.
-- Add global command search.
-- Add mobile navigation polish and responsive table handling.
-- Add activity/audit feed with filters.
-- Add dark/light mode only after the core screens are consistent.
+- macOS: `brew install nginx caddy postgresql redis` flow, `launchd` plist for
+  the panel, AppleScript notifications.
+- Windows: `winget install` flow, `sc.exe` service for the panel, NSSM wrapper
+  for nginx/caddy.
+- Docker fallback when native services are unavailable.
+- Per-OS install scripts in `scripts/install-{macos,windows}.{sh,ps1}`.
 
 Exit criteria:
 
-- Operators can understand success/failure without reading logs.
-- Common hosting workflows take fewer clicks than cPanel/Plesk equivalents.
+- `scripts/install-macos.sh` brings up a working panel on macOS 14+.
+- `scripts/install-windows.ps1` brings up a working panel on Windows 11.
 
-## Phase 5 - Enterprise And Packaging
+## Phase 4 - Security + Release Hardening
 
-Goal: ship and maintain this as a real production product.
+Goal: ship signed releases and pass an external security review.
 
-- Linux/macOS/Windows one-command installers with dry-run and rollback.
-- Docker Compose production stack for panel + database + optional service
+- Self-update with `minisign`/cosign signature verification.
+- Security audit covering: CSRF, SSRF, command injection, file-manager
+  traversal, backup archive extraction, migration imports, service privilege
+  boundaries, default-cred rejection in production mode.
+- `PANEL_PRODUCTION=1` mode that refuses to start with `admin/admin` and
+  binds to 127.0.0.1 by default.
+- SBOM (CycloneDX) + CVE scanning in CI.
+- Threat model document in `docs/security/threat-model.md`.
+
+Exit criteria:
+
+- `make release` produces signed artifacts with SBOM.
+- Security review checklist signed off.
+
+## Phase 5 - Operator UX Polish
+
+Goal: match or beat cPanel/Plesk click-counts for common workflows.
+
+- Flash messages/toasts on every form.
+- SSE or websocket live metrics (replace 30s polling).
+- File manager: upload progress, in-browser editor, archive extract/compress,
+  safe previews.
+- Global command search (`/` to jump).
+- Activity/audit feed with filters.
+- Mobile nav polish + responsive tables.
+- Dark/light mode toggle.
+
+Exit criteria:
+
+- Operator workflows (create site, issue cert, create mailbox, restore backup)
+  take fewer clicks than cPanel equivalents.
+
+## Phase 6 - Enterprise + Ecosystem
+
+Goal: make this viable for hosting providers and integrators.
+
+- Docker Compose production stack: panel + Postgres + optional service
   containers.
-- Scoped API v1 tokens for automation and integrations.
-- Reseller billing hooks and plan enforcement across sites, DBs, mailboxes,
-  storage, and bandwidth.
-- Notifications: email, webhook, Slack-compatible webhook.
-- Prometheus metrics and health endpoints.
-- Self-update UI with signed release verification.
-- Migration guides and importers for cPanel, Plesk, HestiaCP, and aaPanel.
+- Scoped API v1 tokens (`/api/v1/...`) with OpenAPI 3.1 spec.
+- Notifications: email, webhook, Slack-compatible.
+- Prometheus `/metrics` + health endpoints.
+- Reseller billing hooks + plan enforcement.
+- Migration guides + importers for cPanel, Plesk, HestiaCP, aaPanel (round-trip
+  tested).
+- Plugin registry + signed plugin manifests.
 
 Exit criteria:
 
-- Release artifacts can install, update, roll back, and recover on clean hosts.
-- Security review covers auth, CSRF, SSRF, command execution, file manager,
-  backup/restore, migration imports, and service privilege boundaries.
+- Release artifacts install, update, roll back, recover on clean hosts.
+- A second-host restore drill is documented and CI-runnable.
 
-## Priority Order
+## Priority Order (updated)
 
-1. Router health, CSRF, flash messages, default-credential hardening.
-2. SQLite consolidation for JSON-backed feature modules.
-3. Driver layer adoption in DNS, web, mail, SSL, and service-control modules.
-4. SSH terminal.
-5. BIND and Nginx production apply with rollback.
-6. Postfix/Dovecot/DKIM/webmail production apply.
-7. Wildcard SSL and renewals.
-8. Installer hardening and Docker Compose production stack.
-9. Enterprise APIs, metrics, billing hooks, notifications, self-update.
+1. **Clean-host install validation** (Phase 1) — gate everything else.
+2. Driver consolidation (Phase 2) — remove code-duplication risk.
+3. Security review + signed releases (Phase 4) — needed before public launch.
+4. Operator UX (Phase 5) — needed for daily-use credibility.
+5. macOS/Windows drivers (Phase 3) — nice-to-have, not blocker.
+6. Enterprise + ecosystem (Phase 6) — post-launch.
 
 ## Never Claim Production Ready Until
 
-- Clean Ubuntu install succeeds without manual fixes.
-- Backup restore has been tested on a second clean host.
-- DNS, mail, SSL, web, DB, SSH, and file manager flows are all integration-tested.
-- Default credentials are impossible in production mode.
-- All write actions are audited.
-- Destructive operations have confirmation, rollback, or dry-run plans.
+- [ ] `scripts/validate-install.sh` passes on Ubuntu 22.04 + 24.04 clean VMs.
+- [ ] Backup restore has been tested on a second clean host.
+- [ ] DNS, mail, SSL, web, DB, SSH, and file manager flows are integration-tested.
+- [ ] Default credentials are impossible in `PANEL_PRODUCTION=1` mode.
+- [ ] All write actions are audited.
+- [ ] Destructive operations have confirmation + dry-run + rollback.
+- [ ] Security review checklist is signed off.
+- [ ] Releases are signed and reproducible.

@@ -63,6 +63,12 @@ class WebServerDriver(Protocol):
     def reload(self) -> ApplyResult:
         """Reload the web server."""
 
+    def test_config(self) -> ApplyResult:
+        """Validate the web server configuration without reloading."""
+
+    def detect(self) -> ApplyResult:
+        """Detect which web server binary is installed."""
+
 
 class DnsDriver(Protocol):
     """DNS backend abstraction."""
@@ -94,6 +100,51 @@ class PhpFpmDriver(Protocol):
         """Restart the PHP-FPM service for a specific version."""
 
 
+class DatabaseDriver(Protocol):
+    """Database backend abstraction (MySQL/MariaDB, PostgreSQL)."""
+
+    def create(self, name: str, db_type: str = "mysql") -> ApplyResult:
+        """Create a database."""
+
+    def drop(self, name: str, db_type: str = "mysql") -> ApplyResult:
+        """Drop a database."""
+
+    def backup(self, name: str, dest: Path, db_type: str = "mysql") -> ApplyResult:
+        """Dump a database to the given destination file."""
+
+
+class SslDriver(Protocol):
+    """SSL certificate backend abstraction."""
+
+    def issue_letsencrypt(self, domain: str, email: str, *, staging: bool = False, webroot: Path | None = None) -> ApplyResult:
+        """Issue a Let's Encrypt certificate for the domain."""
+
+    def renew(self, domain: str) -> ApplyResult:
+        """Renew an existing certificate."""
+
+
+class FirewallDriver(Protocol):
+    """Firewall backend abstraction (UFW on Linux)."""
+
+    def status(self) -> ApplyResult:
+        """Read firewall state."""
+
+    def enable(self) -> ApplyResult:
+        """Enable the firewall."""
+
+    def disable(self) -> ApplyResult:
+        """Disable the firewall."""
+
+    def allow(self, port: int, proto: str = "tcp") -> ApplyResult:
+        """Allow a port through the firewall."""
+
+    def deny(self, port: int, proto: str = "tcp") -> ApplyResult:
+        """Deny a port through the firewall."""
+
+    def list_rules(self) -> ApplyResult:
+        """List numbered firewall rules."""
+
+
 class PlatformDriver(Protocol):
     """All production integrations for one platform."""
 
@@ -105,4 +156,6 @@ class PlatformDriver(Protocol):
     dns: DnsDriver
     mail: MailDriver
     php_fpm: PhpFpmDriver
-    php_fpm: PhpFpmDriver
+    databases: DatabaseDriver
+    ssl: SslDriver
+    firewall: FirewallDriver

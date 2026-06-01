@@ -1,0 +1,49 @@
+name: ci
+
+# Fast CI: lint + unit tests on every push/PR.
+# The heavy clean-host install validator runs in validate-install.yml on tags.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: lint + unit tests (ubuntu-${{ matrix.ubuntu }})
+    strategy:
+      fail-fast: false
+      matrix:
+        ubuntu: ["22.04", "24.04"]
+        python: ["3.11", "3.12"]
+    runs-on: ubuntu-${{ matrix.ubuntu }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[all]"
+
+      - name: Lint shell
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck
+          shellcheck --severity=warning scripts/install-server.sh
+          shellcheck --severity=warning scripts/validate-install.sh
+          shellcheck --severity=warning scripts/Install-AtulyaLaunch.ps1 || true
+
+      - name: Unit tests
+        run: |
+          python -m pytest tests/ -v --tb=short --durations=10

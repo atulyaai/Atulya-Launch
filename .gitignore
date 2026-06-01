@@ -22,6 +22,8 @@ env/
 .atulya/
 .atulya-*/
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 
 # IDE

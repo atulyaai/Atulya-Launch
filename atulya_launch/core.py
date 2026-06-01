@@ -585,8 +585,10 @@ def service_state(name: str) -> str:
     """Check whether a systemd service is active."""
     if get_platform() != "linux" or not shutil.which("systemctl"):
         return "unknown"
-    result: subprocess.CompletedProcess = subprocess.run(["systemctl", "is-active", name], capture_output=True, text=True, check=False)
-    return result.stdout.strip() or "unknown"
+    from atulya_launch.drivers import get_platform_driver
+    driver = get_platform_driver(dry_run=False)
+    result = driver.services.status(name)
+    return result.message.strip() or ("active" if result.ok else "unknown")
 
 
 def nginx_apply_plan(domain: str | None = None) -> list[dict[str, str]]:
@@ -772,14 +774,12 @@ def detect_web_server() -> str | None:
     """Detect which web server is installed (nginx or apache)."""
     if sys.platform != "linux":
         return None
+    from atulya_launch.drivers import get_platform_driver
+    driver = get_platform_driver(dry_run=False)
+    if driver.web.detect().ok or driver.web.detect().message:
+        return "nginx"
     try:
-        r: subprocess.CompletedProcess = subprocess.run(["nginx", "-v"], capture_output=True, text=True, timeout=10)
-        if r.returncode == 0 or r.returncode == 1:
-            return "nginx"
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        pass
-    try:
-        r = subprocess.run(["apache2ctl", "-v"], capture_output=True, text=True, timeout=10)
+        r: subprocess.CompletedProcess = subprocess.run(["apache2ctl", "-v"], capture_output=True, text=True, timeout=10)
         if r.returncode == 0:
             return "apache"
     except (FileNotFoundError, subprocess.TimeoutExpired):
@@ -1064,40 +1064,69 @@ def discover_all_tools() -> list[dict[str, Any]]:
 
 
 def nginx_apply_and_reload(domain: str) -> dict[str, Any]:
-    """Copy nginx config into /etc/nginx, test, and reload nginx."""
+    """Copy nginx config into /etc/nginx, test, and reload nginx.
+
+    All subprocess invocations are routed through the platform driver
+    (`driver.web.apply_site`, `driver.web.test_config`, `driver.services.reload`)
+    so the panel stays portable across systemd, launchd, and sc.exe.
+    """
     site: dict[str, Any] | None = site_get(domain)
     if not site:
         return {"ok": False, "error": f"site not found: {domain}"}
-    nginx_plan: list[dict[str, str]] = nginx_apply_plan(domain)
-    if not nginx_plan:
-        return {"ok": False, "error": "no plan generated"}
-    item: dict[str, str] = nginx_plan[0]
-    avail_target: Path = Path(item["target"])
-    enabled_link: Path = Path(item["enabled_link"])
-    source: Path = Path(item["source"])
     if get_platform() != "linux":
         return {"ok": False, "error": "nginx apply only supported on Linux"}
+
+    source: Path = Path(site.get("nginx_config", ""))
+    if not source.exists():
+        return {"ok": False, "error": f"missing generated config: {source}"}
+
+    from atulya_launch.drivers import get_platform_driver
+    driver = get_platform_driver(dry_run=False)
     try:
+        config_text = source.read_text(encoding="utf-8")
+
+        # 1. Stage into sites-available
+        avail_target: Path = Path("/etc/nginx/sites-available") / f"{domain}.conf"
         avail_target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, avail_target)
+        apply_result = driver.web.apply_site(domain, config_text)
+        if not apply_result.ok:
+            return {"ok": False, "error": apply_result.message or "apply_site failed"}
+
+        # 2. sites-enabled symlink (Linux convention; idempotent)
+        enabled_link: Path = Path("/etc/nginx/sites-enabled") / f"{domain}.conf"
         enabled_link.parent.mkdir(parents=True, exist_ok=True)
         if enabled_link.exists() or enabled_link.is_symlink():
             enabled_link.unlink()
-        enabled_link.symlink_to(avail_target.resolve())
-        test_result: subprocess.CompletedProcess = subprocess.run(["nginx", "-t"], capture_output=True, text=True, check=False)
-        if test_result.returncode != 0:
-            return {"ok": False, "error": f"nginx -t failed: {test_result.stderr}"}
-        reload_result: subprocess.CompletedProcess = subprocess.run(["systemctl", "reload", "nginx"], capture_output=True, text=True, check=False)
-        if reload_result.returncode != 0:
-            return {"ok": False, "error": f"reload failed: {reload_result.stderr}"}
+        try:
+            enabled_link.symlink_to(avail_target.resolve())
+        except OSError:
+            # non-fatal: not all installs use sites-enabled
+            pass
+
+        # 3. Validate config (driver — works on macOS/Windows too in dry-run)
+        test_result = driver.web.test_config()
+        if not test_result.ok:
+            return {"ok": False, "error": f"config test failed: {test_result.message}"}
+
+        # 4. Reload through the service driver (systemd on Linux, etc.)
+        reload_result = driver.web.reload()
+        if not reload_result.ok:
+            return {"ok": False, "error": f"reload failed: {reload_result.message}"}
+
         audit_event("nginx.reload", "ok", {"domain": domain})
-        return {"ok": True, "domain": domain}
+        return {"ok": True, "domain": domain, "files": apply_result.files, "commands": reload_result.commands}
     except Exception as e:
+        audit_event("nginx.reload", "error", {"domain": domain, "error": str(e)})
         return {"ok": False, "error": str(e)}
 
 
 def database_create(name: str, db_type: str = "mysql") -> dict[str, Any]:
-    """Create a MySQL/PostgreSQL database on the host."""
+    """Create a MySQL/PostgreSQL database on the host.
+
+    pymysql is used directly for MySQL when available; otherwise the call is
+    routed through `driver.databases.create`.
+    """
     if db_type in ("mysql", "mariadb"):
         try:
             import pymysql
@@ -1112,15 +1141,17 @@ def database_create(name: str, db_type: str = "mysql") -> dict[str, Any]:
         except ImportError:
             if get_platform() != "linux":
                 return {"ok": False, "error": "pymysql not installed and subprocess only works on Linux"}
-            result: subprocess.CompletedProcess = run_cmd(["mysql", "-e", f"CREATE DATABASE IF NOT EXISTS `{name}`;"], check=False)
-            return {"ok": result.returncode == 0, "name": name, "type": db_type}
+            from atulya_launch.drivers import get_platform_driver
+            result = get_platform_driver(dry_run=False).databases.create(name, db_type)
+            return {"ok": result.ok, "name": name, "type": db_type, "commands": result.commands}
         except Exception as e:
             return {"ok": False, "error": str(e)}
     elif db_type == "postgresql":
         if get_platform() != "linux":
             return {"ok": False, "error": "PostgreSQL only supported on Linux"}
-        result = run_cmd(["sudo", "-u", "postgres", "createdb", name], check=False)
-        return {"ok": result.returncode == 0, "name": name, "type": db_type}
+        from atulya_launch.drivers import get_platform_driver
+        result = get_platform_driver(dry_run=False).databases.create(name, db_type)
+        return {"ok": result.ok, "name": name, "type": db_type, "commands": result.commands}
     else:
         return {"ok": False, "error": f"unsupported db type: {db_type}"}
 
@@ -1141,15 +1172,17 @@ def database_drop(name: str, db_type: str = "mysql") -> dict[str, Any]:
         except ImportError:
             if get_platform() != "linux":
                 return {"ok": False, "error": "pymysql not installed and subprocess only works on Linux"}
-            result: subprocess.CompletedProcess = run_cmd(["mysql", "-e", f"DROP DATABASE IF EXISTS `{name}`;"], check=False)
-            return {"ok": result.returncode == 0, "name": name}
+            from atulya_launch.drivers import get_platform_driver
+            result = get_platform_driver(dry_run=False).databases.drop(name, db_type)
+            return {"ok": result.ok, "name": name, "commands": result.commands}
         except Exception as e:
             return {"ok": False, "error": str(e)}
     elif db_type == "postgresql":
         if get_platform() != "linux":
             return {"ok": False, "error": "PostgreSQL only supported on Linux"}
-        result = run_cmd(["sudo", "-u", "postgres", "dropdb", name], check=False)
-        return {"ok": result.returncode == 0, "name": name}
+        from atulya_launch.drivers import get_platform_driver
+        result = get_platform_driver(dry_run=False).databases.drop(name, db_type)
+        return {"ok": result.ok, "name": name, "commands": result.commands}
     else:
         return {"ok": False, "error": f"unsupported db type: {db_type}"}
 
@@ -1190,21 +1223,23 @@ def database_backup(name: str, db_type: str = "mysql") -> dict[str, Any]:
         except ImportError:
             if get_platform() != "linux":
                 return {"ok": False, "error": "pymysql not installed and mysqldump only works on Linux"}
-            result: subprocess.CompletedProcess = run_cmd(["mysqldump", "--single-transaction", name], check=False)
-            if result.returncode != 0:
-                return {"ok": False, "error": result.stderr}
+            from atulya_launch.drivers import get_platform_driver
+            result = get_platform_driver(dry_run=False).databases.backup(name, backup_path, db_type)
+            if not result.ok:
+                return {"ok": False, "error": result.message, "commands": result.commands}
             with gzip.open(backup_path, "wt", encoding="utf-8") as f:
-                f.write(result.stdout)
+                f.write(result.message or "")
         except Exception as e:
             return {"ok": False, "error": str(e)}
     elif db_type == "postgresql":
         if get_platform() != "linux":
             return {"ok": False, "error": "PostgreSQL backup only supported on Linux"}
-        result = run_cmd(["sudo", "-u", "postgres", "pg_dump", name], check=False)
-        if result.returncode != 0:
-            return {"ok": False, "error": result.stderr}
+        from atulya_launch.drivers import get_platform_driver
+        result = get_platform_driver(dry_run=False).databases.backup(name, backup_path, db_type)
+        if not result.ok:
+            return {"ok": False, "error": result.message, "commands": result.commands}
         with gzip.open(backup_path, "wt", encoding="utf-8") as f:
-            f.write(result.stdout)
+            f.write(result.message or "")
     else:
         return {"ok": False, "error": f"unsupported db type: {db_type}"}
     audit_event("database.backup", "ok", {"name": name, "path": str(backup_path)})
@@ -1229,56 +1264,68 @@ def ssl_list() -> dict[str, Any]:
     return {k: v for k, v in certs.items() if isinstance(v, dict)}
 
 
-def ssl_issue_letsencrypt(domain: str) -> dict[str, Any]:
-    """Issue a Let's Encrypt SSL certificate for a domain via certbot."""
+def ssl_issue_letsencrypt(domain: str, *, staging: bool = False) -> dict[str, Any]:
+    """Issue a Let's Encrypt SSL certificate for a domain via certbot.
+
+    Routed through `driver.ssl.issue_letsencrypt` so the panel can later
+    support Caddy, acme-dns, and other ACME clients without code changes
+    here. The original certbot-specific flags are preserved for now.
+    """
     if get_platform() != "linux":
         return {"ok": False, "error": "SSL issuance only supported on Linux"}
     cert_dir: Path = CONFIG_DIR / "ssl" / domain
     cert_dir.mkdir(parents=True, exist_ok=True)
-    result: subprocess.CompletedProcess = run_cmd([
-        "certbot", "certonly", "--nginx", "-d", domain,
-        "--non-interactive", "--agree-tos", "--email", f"admin@{domain}",
-        "--cert-path", str(cert_dir / "fullchain.pem"),
-        "--key-path", str(cert_dir / "privkey.pem"),
-    ], check=False)
-    if result.returncode != 0:
-        result = run_cmd([
-            "certbot", "certonly", "--standalone", "-d", domain,
-            "--non-interactive", "--agree-tos", "--email", f"admin@{domain}",
-        ], check=False)
-    if result.returncode == 0:
-        audit_event("ssl.issue", "ok", {"domain": domain})
-        return {"ok": True, "domain": domain, "cert_path": str(cert_dir / "fullchain.pem"), "key_path": str(cert_dir / "privkey.pem"), "expires_at": None}
-    return {"ok": False, "error": result.stderr}
+
+    from atulya_launch.drivers import get_platform_driver
+    driver = get_platform_driver(dry_run=False)
+    result = driver.ssl.issue_letsencrypt(
+        domain,
+        email=f"admin@{domain}",
+        staging=staging,
+    )
+    if not result.ok:
+        return {"ok": False, "error": result.message, "commands": result.commands}
+    audit_event("ssl.issue", "ok", {"domain": domain, "staging": staging})
+    return {
+        "ok": True,
+        "domain": domain,
+        "cert_path": str(cert_dir / "fullchain.pem"),
+        "key_path": str(cert_dir / "privkey.pem"),
+        "expires_at": None,
+        "commands": result.commands,
+    }
 
 
 def ssl_renew(domain: str) -> dict[str, Any]:
     """Renew an existing SSL certificate via certbot."""
     if get_platform() != "linux":
         return {"ok": False, "error": "SSL renewal only supported on Linux"}
-    result: subprocess.CompletedProcess = run_cmd(["certbot", "renew", "--cert-name", domain], check=False)
-    if result.returncode == 0:
-        audit_event("ssl.renew", "ok", {"domain": domain})
-        return {"ok": True, "domain": domain}
-    return {"ok": False, "error": result.stderr}
+    from atulya_launch.drivers import get_platform_driver
+    result = get_platform_driver(dry_run=False).ssl.renew(domain)
+    if not result.ok:
+        return {"ok": False, "error": result.message, "commands": result.commands}
+    audit_event("ssl.renew", "ok", {"domain": domain})
+    return {"ok": True, "domain": domain, "commands": result.commands}
 
 
 def firewall_status() -> dict[str, Any]:
     """Return the UFW firewall status."""
     if get_platform() != "linux" or not shutil.which("ufw"):
         return {"installed": False, "active": False}
-    result: subprocess.CompletedProcess = run_cmd(["ufw", "status"], check=False)
-    active: bool = "active" in result.stdout.lower()
-    return {"installed": True, "active": active, "raw": result.stdout.strip()}
+    from atulya_launch.drivers import get_platform_driver
+    result = get_platform_driver(dry_run=False).firewall.status()
+    active: bool = result.ok and "active" in result.message.lower()
+    return {"installed": True, "active": active, "raw": result.message.strip()}
 
 
 def firewall_list_rules() -> list[str]:
     """List numbered UFW rules."""
     if get_platform() != "linux" or not shutil.which("ufw"):
         return []
-    result: subprocess.CompletedProcess = run_cmd(["ufw", "status", "numbered"], check=False)
+    from atulya_launch.drivers import get_platform_driver
+    result = get_platform_driver(dry_run=False).firewall.list_rules()
     rules: list[str] = []
-    for line in result.stdout.strip().splitlines():
+    for line in result.message.strip().splitlines():
         if line.startswith("[") and "]" in line:
             rules.append(line)
     return rules
@@ -1288,32 +1335,36 @@ def firewall_enable() -> dict[str, bool]:
     """Enable the UFW firewall."""
     if get_platform() != "linux":
         return {"ok": False, "error": "firewall only supported on Linux"}
-    result: subprocess.CompletedProcess = run_cmd(["ufw", "--force", "enable"], check=False)
-    return {"ok": result.returncode == 0}
+    from atulya_launch.drivers import get_platform_driver
+    result = get_platform_driver(dry_run=False).firewall.enable()
+    return {"ok": result.ok, "commands": result.commands}
 
 
 def firewall_disable() -> dict[str, bool]:
     """Disable the UFW firewall."""
     if get_platform() != "linux":
         return {"ok": False, "error": "firewall only supported on Linux"}
-    result: subprocess.CompletedProcess = run_cmd(["ufw", "disable"], check=False)
-    return {"ok": result.returncode == 0}
+    from atulya_launch.drivers import get_platform_driver
+    result = get_platform_driver(dry_run=False).firewall.disable()
+    return {"ok": result.ok, "commands": result.commands}
 
 
 def firewall_allow(port: int, proto: str = "tcp") -> dict[str, bool]:
     """Allow traffic on a port through the firewall."""
     if get_platform() != "linux":
         return {"ok": False, "error": "firewall only supported on Linux"}
-    result: subprocess.CompletedProcess = run_cmd(["ufw", "allow", f"{port}/{proto}"], check=False)
-    return {"ok": result.returncode == 0}
+    from atulya_launch.drivers import get_platform_driver
+    result = get_platform_driver(dry_run=False).firewall.allow(port, proto)
+    return {"ok": result.ok, "commands": result.commands}
 
 
 def firewall_deny(port: int, proto: str = "tcp") -> dict[str, bool]:
     """Deny traffic on a port through the firewall."""
     if get_platform() != "linux":
         return {"ok": False, "error": "firewall only supported on Linux"}
-    result: subprocess.CompletedProcess = run_cmd(["ufw", "deny", f"{port}/{proto}"], check=False)
-    return {"ok": result.returncode == 0}
+    from atulya_launch.drivers import get_platform_driver
+    result = get_platform_driver(dry_run=False).firewall.deny(port, proto)
+    return {"ok": result.ok, "commands": result.commands}
 
 
 def fail2ban_status() -> dict[str, Any]:
@@ -1334,8 +1385,9 @@ def fail2ban_restart() -> dict[str, Any]:
     """Restart the fail2ban service."""
     if get_platform() != "linux":
         return {"ok": False, "error": "fail2ban only supported on Linux"}
-    result: subprocess.CompletedProcess = run_cmd(["systemctl", "restart", "fail2ban"], check=False)
-    return {"ok": result.returncode == 0}
+    from atulya_launch.drivers import get_platform_driver
+    result = get_platform_driver(dry_run=False).services.restart("fail2ban")
+    return {"ok": result.ok, "commands": result.commands}
 
 
 APP_CATALOG: dict[str, dict[str, Any]] = {

@@ -166,18 +166,26 @@ def setup_panel():
         panel_dir.mkdir(parents=True, exist_ok=True)
 
     # Locate the source tree (parent of scripts/ where this file lives) so we
-    # can `pip install` the panel into the same Python interpreter the
-    # systemd service will use. Without this, the service crashes with
-    # "No module named atulya_launch" on first start.
+    # can `pip install` the panel. We always install into a venv under
+    # panel_dir/venv because (a) PEP 668 forbids system pip installs on modern
+    # Ubuntu and (b) the systemd unit must use a stable interpreter path.
     script_dir = Path(__file__).resolve().parent
     source_root = script_dir.parent
     pyproject = source_root / "pyproject.toml"
+    venv_dir = panel_dir / "venv"
+    venv_python = venv_dir / "bin" / "python"
+
     if pyproject.is_file():
-        log(f"Installing panel package from {source_root}...")
-        run([sys.executable, "-m", "pip", "install", "--upgrade", "pip"], check=False)
-        run([sys.executable, "-m", "pip", "install", "-e", str(source_root)])
+        log(f"Creating venv at {venv_dir}...")
+        run([sys.executable, "-m", "venv", str(venv_dir)])
+        log("Upgrading pip in venv...")
+        run([str(venv_python), "-m", "pip", "install", "--upgrade", "pip", "wheel", "setuptools"])
+        log(f"Installing panel package from {source_root} into venv...")
+        # Install all extras so the panel's full feature set (web/db/ssh/auth)
+        # is available out of the box.
+        run([str(venv_python), "-m", "pip", "install", "-e", f"{source_root}[all,dev]"])
     else:
-        warn(f"No pyproject.toml found at {pyproject}; skipping pip install. The systemd unit WILL fail to start.")
+        warn(f"No pyproject.toml found at {pyproject}; skipping venv setup. The systemd unit WILL fail to start.")
 
     if not ADMIN_PASS:
         ADMIN_PASS = generate_password()
@@ -200,6 +208,8 @@ def setup_systemd():
         log("[skip] systemd not available on Windows")
         return
     log("Setting up systemd service...")
+    venv_python = Path("/opt/atulya-launch/venv/bin/python")
+    exec_start = str(venv_python) if venv_python.is_file() else sys.executable
     service_content = f"""[Unit]
 Description=Atulya Launch Hosting Panel
 After=network.target
@@ -208,7 +218,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=/opt/atulya-launch
-ExecStart={sys.executable} -m atulya_launch serve --host {PANEL_HOST} --port {PANEL_PORT}
+ExecStart={exec_start} -m atulya_launch serve --host {PANEL_HOST} --port {PANEL_PORT}
 Restart=always
 RestartSec=5
 Environment=ATULYA_PRODUCTION=1

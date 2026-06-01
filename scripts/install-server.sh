@@ -257,30 +257,14 @@ install_panel() {
 }
 
 create_systemd_service() {
-    log "Creating systemd service..."
-    INSTALL_DIR="$HOME/.atulya-launch"
-    cat > /etc/systemd/system/atulya-launch.service <<EOF
-[Unit]
-Description=Atulya Launch Hosting Panel
-After=network.target nginx.service mysql.service
-
-[Service]
-Type=simple
-User=root
-Environment=ATULYA_HOME=$HOME/.atulya
-ExecStart=$INSTALL_DIR/venv/bin/python -m atulya_launch serve --host $PANEL_HOST --port $PANEL_PORT
-Restart=always
-RestartSec=5
-StandardOutput=journal
-StandardError=journal
-
-[Install]
-WantedBy=multi-user.target
-EOF
+    # The systemd unit is created by install.py:setup_systemd() (which knows
+    # the correct venv path). Here we only need to ensure systemd is aware
+    # of the unit and that the service is running.
+    log "Activating Atulya Launch service..."
     systemctl daemon-reload
-    systemctl enable atulya-launch > /dev/null 2>&1
-    systemctl start atulya-launch > /dev/null 2>&1
-    log "Atulya Launch service created and started."
+    systemctl enable atulya-launch > /dev/null 2>&1 || true
+    systemctl restart atulya-launch > /dev/null 2>&1 || warn "could not start atulya-launch; check 'journalctl -u atulya-launch'"
+    log "Atulya Launch service activated."
 }
 
 print_summary() {

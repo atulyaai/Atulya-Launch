@@ -166,7 +166,9 @@ def create_app() -> FastAPI:
     app: FastAPI = FastAPI(title="Atulya Launch", docs_url="/api/docs", redoc_url=None)
 
     config_dir: Path = core.ensure_dirs()
-    init_db(config_dir)
+    from .database import _initialized as _db_ready
+    if not _db_ready:
+        init_db(config_dir)
 
     try:
         from .sites_service import migrate_config_json_to_sqlite

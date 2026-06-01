@@ -111,6 +111,13 @@ def create_site(domain: str, web_root: str | None = None, proxy_pass: str | None
         config_path = Path(nginx_config)
         if config_path.exists():
             driver.web.apply_site(domain, config_path.read_text(encoding="utf-8"))
+            # Create symlink to sites-enabled
+            enabled_link = Path(f"/etc/nginx/sites-enabled/{domain}.conf")
+            if not enabled_link.exists():
+                try:
+                    enabled_link.symlink_to(config_path)
+                except OSError:
+                    pass
             driver.web.reload()
     except Exception:
         pass

@@ -142,7 +142,8 @@ def default_config() -> dict[str, Any]:
 
 
 def panel_init(admin_user: str = "admin", admin_password: str | None = None, rotate_token: bool = False) -> dict[str, Any]:
-    """Initialize the panel configuration with admin user and API token."""
+    """Initialize the panel configuration with admin user and API token.
+    Also creates the admin user in SQLite for unified auth."""
     cfg: dict[str, Any] = load_config()
     panel: dict[str, Any] = cfg.setdefault("panel", {})
     if not panel.get("created_at"):
@@ -157,6 +158,17 @@ def panel_init(admin_user: str = "admin", admin_password: str | None = None, rot
     if rotate_token or not panel.get("api_token"):
         panel["api_token"] = secrets.token_urlsafe(32)
     save_config(cfg)
+
+    # Ensure admin user exists in SQLite for unified auth
+    from atulya_launch.web import database
+    from atulya_launch.web.auth import create_user
+    database.init_db(CONFIG_DIR)
+    pw = admin_password or generated_password
+    if pw:
+        try:
+            create_user(admin_user, pw, role="admin", skip_policy=True)
+        except ValueError:
+            pass
     audit_event("panel.init", "ok", {"admin_user": admin_user, "rotated_token": rotate_token})
     return {
         "config_dir": str(CONFIG_DIR),
@@ -194,27 +206,28 @@ def verify_password(password: str, encoded: str) -> bool:
 
 
 def login(username: str, password: str) -> str | None:
-    """Authenticate a panel user and return a session token, or None on failure."""
-    cfg: dict[str, Any] = load_config()
-    panel: dict[str, Any] = cfg.get("panel", {})
-    if username != panel.get("admin_user") or not verify_password(password, panel.get("password_hash", "")):
-        audit_event("auth.login", "denied", {"username": username})
+    """Authenticate a panel user and return a session token, or None on failure.
+    Uses the same SQLite-backed auth as the web panel."""
+    from atulya_launch.web import database
+    from atulya_launch.web.auth import authenticate
+    database.init_db(CONFIG_DIR)
+    result = authenticate(username, password)
+    if result is None:
         return None
-    token: str = secrets.token_urlsafe(32)
-    cfg.setdefault("sessions", {})[token] = {
-        "username": username,
-        "created_at": datetime.utcnow().isoformat() + "Z",
-    }
-    save_config(cfg)
-    audit_event("auth.login", "ok", {"username": username})
-    return token
+    if result.get("requires_2fa"):
+        return None
+    return result.get("token")
 
 
 def validate_session(token: str | None) -> bool:
-    """Check whether a session token is currently valid."""
+    """Check whether a session token is currently valid.
+    Uses the same SQLite-backed sessions as the web panel."""
     if not token:
         return False
-    return token in load_config().get("sessions", {})
+    from atulya_launch.web import database
+    from atulya_launch.web.auth import validate_session as web_validate
+    database.init_db(CONFIG_DIR)
+    return web_validate(token) is not None
 
 
 def audit_event(action: str, status: str, details: dict[str, Any] | None = None) -> dict[str, Any]:

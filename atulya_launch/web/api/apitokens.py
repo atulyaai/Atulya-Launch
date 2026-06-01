@@ -50,17 +50,15 @@ def list_tokens(user: dict = Depends(get_current_user)):
 def create_token(body: TokenCreate, user: dict = Depends(get_current_user)):
     token_value = secrets.token_hex(32)
     token_id = token_value[:16]
-    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    now = datetime.datetime.now(datetime.timezone.utc)
     expires_at = None
-    if body.expires_days:
-        expires_at = (now + datetime.timedelta(days=body.expires_days)).isoformat() if isinstance(now, str) else None
-        if isinstance(now, str):
-            expires_at = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=body.expires_days)).isoformat()
+    if body.expires_days and body.expires_days > 0:
+        expires_at = (now + datetime.timedelta(days=body.expires_days)).isoformat()
     username = user.get("sub", "admin")
     with connect() as conn:
         conn.execute(
             "INSERT INTO api_tokens (token_id, name, token_hash, permissions, created_by, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (token_id, body.name, token_value, json.dumps(body.permissions), username, now, expires_at),
+            (token_id, body.name, token_value, json.dumps(body.permissions), username, now.isoformat(), expires_at),
         )
     return {
         "status": "token created",

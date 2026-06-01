@@ -1,5 +1,6 @@
 """Database management API."""
 
+import re
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -8,6 +9,15 @@ from atulya_launch import core, utils
 from atulya_launch.web.auth import get_current_user
 
 router = APIRouter(prefix="/api/databases", tags=["databases"])
+
+_SAFE_DB_NAME = re.compile(r"^[a-zA-Z0-9_]+$")
+
+
+def _validate_db_name(name: str) -> str:
+    """Validate a database name to prevent SQL/shell injection."""
+    if not name or not _SAFE_DB_NAME.match(name):
+        raise HTTPException(status_code=400, detail="Invalid database name: only alphanumeric and underscore allowed")
+    return name
 
 
 class DatabaseCreate(BaseModel):
@@ -34,6 +44,7 @@ def create_database(body: DatabaseCreate, user: dict = Depends(get_current_user)
 
 @router.delete("/{name}")
 def delete_database(name: str, user: dict = Depends(get_current_user)):
+    name = _validate_db_name(name)
     dbs = core.db_list()
     if name not in dbs:
         raise HTTPException(status_code=404, detail="Database not found")
@@ -41,7 +52,7 @@ def delete_database(name: str, user: dict = Depends(get_current_user)):
     if db_type == "mysql":
         utils.run_command(["mysql", "-e", f"DROP DATABASE IF EXISTS `{name}`;"], check=False)
     elif db_type == "postgresql":
-        utils.run_command(["sudo", "-u", "postgres", "psql", "-c", f"DROP DATABASE IF EXISTS {name};"], check=False)
+        utils.run_command(["sudo", "-u", "postgres", "psql", "-c", f'DROP DATABASE IF EXISTS "{name}";'], check=False)
     else:
         raise HTTPException(status_code=400, detail=f"Unsupported db type: {db_type}")
     from atulya_launch.web.database import connect
@@ -56,6 +67,7 @@ def delete_database(name: str, user: dict = Depends(get_current_user)):
 
 @router.post("/{name}/backup")
 def backup_database(name: str, user: dict = Depends(get_current_user)):
+    name = _validate_db_name(name)
     dbs = core.db_list()
     db_type = dbs.get(name, {}).get("db_type", "mysql")
     result = core.database_backup(name=name, db_type=db_type)
@@ -66,6 +78,7 @@ def backup_database(name: str, user: dict = Depends(get_current_user)):
 
 @router.post("/{name}/restore")
 def restore_database(name: str, body: RestoreRequest, user: dict = Depends(get_current_user)):
+    name = _validate_db_name(name)
     dbs = core.db_list()
     db_type = dbs.get(name, {}).get("db_type", "mysql")
     if db_type == "mysql":
@@ -83,6 +96,7 @@ def restore_database(name: str, body: RestoreRequest, user: dict = Depends(get_c
 
 @router.get("/{name}/phpmyadmin")
 def get_phpmyadmin_url(name: str, user: dict = Depends(get_current_user)):
+    name = _validate_db_name(name)
     dbs = core.db_list()
     if name not in dbs:
         raise HTTPException(status_code=404, detail="Database not found")

@@ -313,10 +313,20 @@ class PlannedMailDriver:
 
     def apply_domain(self, domain: str, mailboxes: list[dict[str, str | int]]) -> ApplyResult:
         target = self.config_dir / "virtual_mailboxes"
-        lines = [f"{box.get('mailbox')}@{domain} {domain}/{box.get('mailbox')}/" for box in mailboxes]
+        new_lines = [f"{box.get('mailbox')}@{domain} {domain}/{box.get('mailbox')}/" for box in mailboxes]
+
         if not self.dry_run:
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            existing = ""
+            if target.exists():
+                existing = target.read_text(encoding="utf-8")
+            other_domains = [
+                line for line in existing.splitlines()
+                if line.strip() and not line.strip().endswith(f"@{domain} ")
+            ]
+            all_lines = other_domains + new_lines
+            target.write_text("\n".join(all_lines) + "\n", encoding="utf-8")
+
         postfix = self.service.reload("postfix")
         dovecot = self.service.reload("dovecot")
         return ApplyResult(

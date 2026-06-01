@@ -457,9 +457,10 @@ def reset_db() -> None:
 def init_db(config_dir: Path, force: bool = False) -> None:
     """Initialize the SQLite database, creating tables and applying migrations."""
     global _db_path, _initialized
-    if _initialized and not force:
+    desired = config_dir / "panel.db"
+    if _initialized and not force and _db_path == desired:
         return
-    _db_path = config_dir / "panel.db"
+    _db_path = desired
     try:
         _init_schema()
     except sqlite3.OperationalError:
@@ -472,7 +473,8 @@ def init_db(config_dir: Path, force: bool = False) -> None:
 
 def _init_schema() -> None:
     """Create tables and apply lightweight migrations on the selected DB path."""
-    with connect_raw() as conn:
+    conn = connect_raw()
+    try:
         conn.executescript(SCHEMA)
         row: Any = conn.execute("SELECT MAX(version) as v FROM schema_version").fetchone()
         current_version: int = row["v"] if row and row["v"] else 0
@@ -791,6 +793,8 @@ def _init_schema() -> None:
                 "INSERT OR REPLACE INTO schema_version (version, applied_at) VALUES (?, ?)",
                 (SCHEMA_VERSION, datetime.utcnow().isoformat() + "Z"),
             )
+    finally:
+        conn.close()
 
 
 def connect_raw() -> sqlite3.Connection:

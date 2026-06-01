@@ -11,6 +11,7 @@ import secrets
 import string
 import socket
 import logging
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,8 @@ CONFIG_DIR: Path = Path.home() / ".atulya-launch"
 CONFIG_FILE: Path = CONFIG_DIR / "config.yaml"
 
 TEMPLATES_DIR: Path = Path(__file__).parent / "templates"
+
+_config_lock = threading.Lock()
 
 
 def is_linux() -> bool:
@@ -69,18 +72,20 @@ def run_command(command: str | list[str], capture_output: bool = True, check: bo
 
 
 def load_config() -> dict:
-    """Load YAML config from CONFIG_FILE, returning an empty dict if missing."""
+    """Load the YAML config file, returning an empty dict if missing."""
     if not CONFIG_FILE.exists():
         return {}
-    with open(CONFIG_FILE, "r") as file_handle:
-        return yaml.safe_load(file_handle) or {}
+    with _config_lock:
+        with open(CONFIG_FILE, "r") as file_handle:
+            return yaml.safe_load(file_handle) or {}
 
 
 def save_config(config_data: dict) -> None:
     """Save a dict to the YAML config file."""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    with open(CONFIG_FILE, "w") as file_handle:
-        yaml.dump(config_data, file_handle, default_flow_style=False)
+    with _config_lock:
+        with open(CONFIG_FILE, "w") as file_handle:
+            yaml.dump(config_data, file_handle, default_flow_style=False)
 
 
 def get_config_value(key_path: str, default: Any = None) -> Any:

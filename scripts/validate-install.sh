@@ -47,7 +47,27 @@ ADMIN_PASS="${ADMIN_PASS:-}"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --skip-install) SKIP_INSTALL=1; shift ;;
+        --skip-install)
+            # Accept either bare flag (--skip-install) or value (--skip-install 1|0|true|false)
+            if [[ $# -ge 2 && "$2" =~ ^[01TtFf](alse|rue)?$ ]]; then
+                case "$2" in
+                    1|[Tt]rue|[Tt])  SKIP_INSTALL=1 ;;
+                    *)               SKIP_INSTALL=0 ;;
+                esac
+                shift 2
+            else
+                SKIP_INSTALL=1
+                shift
+            fi
+            ;;
+        --skip-install=*)
+            v="${1#--skip-install=}"
+            case "$v" in
+                1|[Tt]rue|[Tt])  SKIP_INSTALL=1 ;;
+                *)               SKIP_INSTALL=0 ;;
+            esac
+            shift
+            ;;
         --report)       REPORT_PATH="$2"; shift 2 ;;
         --domain)       TEST_DOMAIN="$2"; shift 2 ;;
         --admin-pass)   ADMIN_PASS="$2"; shift 2 ;;

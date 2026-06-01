@@ -67,13 +67,42 @@ install_mysql() {
 }
 
 install_php() {
-    log "Installing PHP-FPM (8.1, 8.2, 8.3)..."
-    for ver in 8.1 8.2 8.3; do
-        apt-get install -y -qq php$ver-fpm php$ver-mysql php$ver-cli php$ver-curl php$ver-gd php$ver-mbstring php$ver-xml php$ver-zip > /dev/null 2>&1 || true
+    log "Installing PHP-FPM..."
+    # Ubuntu 22.04 ships 8.1 in main; 8.2/8.3 require the ondrej/php PPA.
+    # Try PPA first so 8.3 is available, fall back to whatever main provides.
+    if ! apt-cache show php8.3-fpm > /dev/null 2>&1; then
+        warn "PHP 8.3 not in main repos; adding ondrej/php PPA..."
+        if ! apt-get install -y -qq software-properties-common ca-certificates apt-transport-https lsb-release > /dev/null 2>&1; then
+            warn "apt-get install prerequisites for PPA failed; continuing with main repos"
+        fi
+        add-apt-repository -y ppa:ondrej/php > /dev/null 2>&1 || true
+        apt-get update -qq || true
+    fi
+    local installed=""
+    for ver in 8.3 8.2 8.1 8.0 7.4; do
+        if apt-cache show "php${ver}-fpm" > /dev/null 2>&1; then
+            log "  installing php${ver}-fpm + extensions"
+            if DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+                "php${ver}-fpm" "php${ver}-mysql" "php${ver}-cli" "php${ver}-curl" \
+                "php${ver}-gd" "php${ver}-mbstring" "php${ver}-xml" "php${ver}-zip" \
+                > /tmp/atulya-php-install.log 2>&1; then
+                installed="${ver} ${installed}"
+            else
+                warn "  php${ver}-fpm install failed; trying next version (see /tmp/atulya-php-install.log)"
+            fi
+        fi
     done
-    systemctl enable php8.3-fpm > /dev/null 2>&1
-    systemctl start php8.3-fpm > /dev/null 2>&1
-    log "PHP-FPM installed (8.1, 8.2, 8.3)."
+    installed="$(echo "${installed}" | xargs)"  # trim
+    if [ -z "${installed}" ]; then
+        err "No PHP-FPM version could be installed. Cannot continue."
+    fi
+    # Pick the highest installed version and enable/start it
+    local primary
+    primary="$(echo "${installed}" | tr ' ' '\n' | sort -V | tail -1)"
+    log "Primary PHP-FPM: ${primary}"
+    systemctl enable "php${primary}-fpm" > /dev/null 2>&1 || warn "could not enable php${primary}-fpm"
+    systemctl restart "php${primary}-fpm" > /dev/null 2>&1 || warn "could not start php${primary}-fpm"
+    log "PHP-FPM installed (${installed// /, })."
 }
 
 install_modsecurity() {
@@ -130,6 +159,38 @@ install_certbot() {
     log "Installing Certbot..."
     apt-get install -y -qq certbot python3-certbot-nginx > /dev/null 2>&1
     log "Certbot installed."
+}
+
+install_mail_stack() {
+    log "Installing mail stack (postfix, dovecot, opendkim, bind9)..."
+    # Postfix: non-interactive install with "Internet Site" config.
+    debconf-set-selections <<EOF
+postfix postfix/main_mailer_type string 'Internet Site'
+postfix postfix/mailname string '${TEST_DOMAIN:-localhost.localdomain}'
+postfix postfix/destinations string '${TEST_DOMAIN:-localhost.localdomain}, localhost'
+EOF
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq postfix > /tmp/atulya-postfix.log 2>&1 \
+        || warn "postfix install failed; see /tmp/atulya-postfix.log"
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq dovecot-core dovecot-imapd dovecot-pop3d dovecot-lmtpd > /tmp/atulya-dovecot.log 2>&1 \
+        || warn "dovecot install failed; see /tmp/atulya-dovecot.log"
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq opendkim opendkim-tools > /tmp/atulya-opendkim.log 2>&1 \
+        || warn "opendkim install failed; see /tmp/atulya-opendkim.log"
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq bind9 bind9utils bind9-doc > /tmp/atulya-bind.log 2>&1 \
+        || warn "bind9 install failed; see /tmp/atulya-bind.log"
+
+    # Enable & start (idempotent; ignore if service not present)
+    for svc in postfix dovecot opendkim bind9 named; do
+        if systemctl list-unit-files "${svc}.service" 2>/dev/null | grep -q "${svc}.service"; then
+            systemctl enable "${svc}" > /dev/null 2>&1 || true
+            systemctl restart "${svc}" > /dev/null 2>&1 || true
+        fi
+    done
+    # `named` is the legacy service name on older Ubuntu; bind9 is the new one.
+    if systemctl list-unit-files named.service 2>/dev/null | grep -q named.service; then
+        systemctl enable named > /dev/null 2>&1 || true
+        systemctl restart named > /dev/null 2>&1 || true
+    fi
+    log "Mail stack install step complete (services may be inactive if installs failed; see /tmp/atulya-*.log)."
 }
 
 install_docker() {
@@ -261,6 +322,7 @@ main() {
     install_php
     install_modsecurity
     install_certbot
+    install_mail_stack
     install_docker
     configure_firewall
     configure_fail2ban

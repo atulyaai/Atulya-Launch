@@ -164,6 +164,21 @@ def setup_panel():
         log(f"[dry-run] Would create panel directory: {panel_dir}")
     else:
         panel_dir.mkdir(parents=True, exist_ok=True)
+
+    # Locate the source tree (parent of scripts/ where this file lives) so we
+    # can `pip install` the panel into the same Python interpreter the
+    # systemd service will use. Without this, the service crashes with
+    # "No module named atulya_launch" on first start.
+    script_dir = Path(__file__).resolve().parent
+    source_root = script_dir.parent
+    pyproject = source_root / "pyproject.toml"
+    if pyproject.is_file():
+        log(f"Installing panel package from {source_root}...")
+        run([sys.executable, "-m", "pip", "install", "--upgrade", "pip"], check=False)
+        run([sys.executable, "-m", "pip", "install", "-e", str(source_root)])
+    else:
+        warn(f"No pyproject.toml found at {pyproject}; skipping pip install. The systemd unit WILL fail to start.")
+
     if not ADMIN_PASS:
         ADMIN_PASS = generate_password()
         log(f"Generated admin password: {ADMIN_PASS}")

@@ -235,8 +235,8 @@ for i in {1..30}; do
         cat /etc/systemd/system/atulya-launch.service >> "$VALIDATOR_LOG" 2>&1 || true
         echo "" >> "$VALIDATOR_LOG"
         echo "--- python venv probe ---" >> "$VALIDATOR_LOG"
-        ls -la /opt/atulya-launch/venv/bin/python 2>&1 >> "$VALIDATOR_LOG" || true
-        /opt/atulya-launch/venv/bin/python -c "import atulya_launch; print('OK', atulya_launch.__file__)" >> "$VALIDATOR_LOG" 2>&1 || true
+        (ls -la /opt/atulya-launch/venv/bin/python 2>&1 || true) >> "$VALIDATOR_LOG"
+        (/opt/atulya-launch/venv/bin/python -c "import atulya_launch; print('OK', atulya_launch.__file__)" 2>&1 || true) >> "$VALIDATOR_LOG"
         write_report; exit 1
     }
 done

@@ -59,6 +59,8 @@ jobs:
     name: clean-host install + lifecycle on ubuntu-${{ inputs.ubuntu_version || '22.04' }}
     runs-on: ubuntu-22.04
     timeout-minutes: 45
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
     permissions:
       contents: read
 

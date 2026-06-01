@@ -40,7 +40,6 @@ TEST_DOMAIN="${TEST_DOMAIN:-validation.atulya.local}"
 TEST_EMAIL_USER="validate"
 TEST_EMAIL_PASS="ValidatePass!2026"
 TEST_DB_NAME="validate_db"
-TEST_SITE_ROOT="/var/www/${TEST_DOMAIN}"
 PANEL_PORT="${PANEL_PORT:-8080}"
 PANEL_HOST="${PANEL_HOST:-127.0.0.1}"
 ADMIN_USER="${ADMIN_USER:-admin}"
@@ -339,7 +338,7 @@ else
 fi
 
 # DKIM key generated
-if [[ -d /etc/opendkim/keys ]] && ls /etc/opendkim/keys/*${TEST_DOMAIN}* 2>/dev/null | grep -q .; then
+if [[ -d /etc/opendkim/keys ]] && compgen -G "/etc/opendkim/keys/*${TEST_DOMAIN}*" > /dev/null; then
     record PASS "dkim_keys" "present in /etc/opendkim/keys"
 else
     record WARN "dkim_keys" "no key files for ${TEST_DOMAIN}"

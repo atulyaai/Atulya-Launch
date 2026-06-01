@@ -14,11 +14,14 @@ concurrency:
 
 jobs:
   test:
-    name: lint + unit tests (ubuntu-${{ matrix.ubuntu }})
+    name: tests on ${{ matrix.os }} py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
     strategy:
       fail-fast: false
       matrix:
-        ubuntu: ["22.04", "24.04"]
+        os: [ubuntu-22.04, ubuntu-24.04]
         python: ["3.11", "3.12"]
     runs-on: ubuntu-${{ matrix.ubuntu }}
     timeout-minutes: 15

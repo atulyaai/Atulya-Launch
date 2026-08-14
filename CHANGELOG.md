@@ -1,5 +1,52 @@
 # Changelog
 
+## v1.1.0 (2026-08-15)
+
+### Reliability & Cross-Platform Fixes
+- `/api/health` no longer crashes on Windows: `os.getloadavg()` is guarded and
+  service checks skip `systemctl` on non-Linux platforms.
+- `PhpFpmDriver.status()` returns the service status instead of nothing;
+  removed dead code left in `PlannedFirewallDriver.list_rules`.
+- Replaced all ~85 `datetime.utcnow()` calls with
+  `datetime.now(timezone.utc).replace(tzinfo=None)` (17 files) — zero
+  deprecation warnings on 3.12+.
+
+### Unified Two-Factor Authentication
+- New `web/twofa_store.py` — a single SQLite-backed store for secrets, enabled
+  state, pending setup, and backup codes.
+- `core.twofa_*`, `web/auth`, and `web/api/twofa.py` all delegate to it,
+  removing the previous divergence across `config.json`, `twofa.json`, and the
+  per-module SQLite reads. Login challenge and settings/API now agree.
+
+### New Feature Modules
+- `web/api/dnssec.py` — enable/disable/resign DNSSEC, key tag + DS records.
+- `web/api/addondomains.py` — addon domains with dedicated document root,
+  site + DNS zone registration.
+- `web/api/sitepublisher.py` — Coming Soon / Landing / Maintenance pages
+  written to `index.html`.
+- `web/api/emailauth.py` — SPF/DMARC defaults, upsert, and DNS TXT auto-sync.
+- `web/api/featuremanager.py` — WHM-style feature groups, per-user overrides,
+  and a dedicated IP pool.
+- `web/api/v1.py` — versioned `/api/v1/meta` + `/api/v1/health`;
+  OpenAPI 3.1 schema served at `/api/openapi.json`.
+- New SQLite tables: `dnssec_zones`, `addon_domains`, `site_publisher`,
+  `email_auth_records`, `feature_groups`, `ip_allocations`,
+  `ai_metric_history`.
+
+### AI Operations
+- `atulya_launch/ai/predictive.py` — metric sampling, rolling SQLite history,
+  linear-trend forecast, risk scoring, suggested + safe automated actions.
+- `web/api/aipredict.py` — `/api/ai/predict`, `/api/ai/history`,
+  `/api/ai/automate`. Optional Tantra-LLM enrichment when installed.
+
+### Tests & Docs
+- 16 new tests in `tests/test_new_features.py` covering AI prediction,
+  DNSSEC, addon domains, site publisher, SPF/DMARC, feature manager, IP pool,
+  unified 2FA, and the v1 API.
+- **Total: 140 tests passing** (was 124).
+- `README.md` refreshed: accurate route/test counts, new feature sections,
+  updated architecture and test matrix.
+
 ## v1.0.1-validate (unreleased)
 
 ### Phase 2 - Driver Layer Consolidation

@@ -12,6 +12,7 @@ ordered from fastest/highest-leverage work to slower production integration.
 | [Phase 3](phase-3-hosting-services.md) | DNS, mail, web, SSL, SSH, FTP/SFTP | Real hosting service control |
 | [Phase 4](phase-4-operator-ux.md) | Feedback, live UI, file manager, search | Daily-use operator experience |
 | [Phase 5](phase-5-enterprise-packaging.md) | Installers, Docker, API, metrics, billing | Shippable production product |
+| [Phase 7](phase-7-ai-operations.md) | AI prediction, diagnosis, NL ops | AI-native control panel |
 
 ## Working Rule
 

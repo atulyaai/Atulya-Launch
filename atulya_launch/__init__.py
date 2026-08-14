@@ -3,7 +3,7 @@
 Exports version constant and list of Atulya tool names.
 """
 
-__version__: str = "1.0.0"
+__version__: str = "1.1.0"
 
 ATULYA_TOOLS: list[str] = [
     "Atulya-All-File-Converter",

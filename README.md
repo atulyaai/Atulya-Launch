@@ -9,12 +9,13 @@ HestiaCP, and aaPanel.
 
 > **Status: feature-complete MVP, hardening for clean-host install.** The panel
 > ships a working FastAPI app, CLI, full auth/session/2FA layer, audit logging,
-> 596 mounted routes across 33 feature groups, and **109 passing tests** (75s).
+> 610 mounted routes (470 API + 140 page), 94 API modules, and **140 passing tests**.
 > Phase 3 services are implemented for mail (Postfix/Dovecot/OpenDKIM), SSL
 > (Let's Encrypt + wildcard DNS-01), SSH terminal (asyncssh + WebSocket), and
-> Nginx config. Remaining work before a public "production cPanel replacement"
-> claim: clean-host install validation, security audit, signed releases, and
-> macOS/Windows driver implementation.
+> Nginx config. An AI predictive-health engine and a versioned `/api/v1`
+> surface with OpenAPI 3.1 are included. Remaining work before a public
+> "production cPanel replacement" claim: clean-host install validation,
+> security audit, signed releases, and macOS/Windows driver implementation.
 
 ## What's Included
 
@@ -27,14 +28,31 @@ HestiaCP, and aaPanel.
 - Create/list/delete websites with automatic Nginx config generation
 - Reverse proxy support, PHP-FPM blocks
 - Nginx config apply/test/reload workflow (Linux)
+- **Addon domains** (`/api/addon-domains`): extra domains with their own
+  document root on an existing site
+- **Site Publisher** (`/api/site-publisher`): one-click Coming Soon / Landing /
+  Maintenance pages written straight to `index.html`
+
+### AI Operations (`/api/ai`)
+- **Predictive health** (`/api/ai/predict`): metric sampling → rolling history
+  → linear-trend forecast → risk scoring (healthy/attention/critical)
+- **Suggested actions** per metric (restart heavy process, rotate backups,
+  review workers) plus safe automated actions (`/api/ai/automate`)
+- Optional Tantra-LLM enrichment when installed; works standalone without it
+- Metric history (`/api/ai/history`) in SQLite
 
 ### DNS Management
 - DNS zone and record management (A, AAAA, CNAME, MX, TXT, NS, SRV)
 - SQLite-backed persistent storage
+- **DNSSEC**: per-zone signing state, key tags, DS records, resign
+- BIND zone files + driver-generated config
 
 ### Email Management
 - Create/delete email accounts with password hashing
 - Quota management
+- **SPF/DMARC central manager** (`/api/email-auth`): defaults, upsert, and
+  auto-sync of TXT records into the DNS zone
+- DKIM key generation + policy, forwarding, autoresponders, routing
 
 ### Database Management
 - MySQL/MariaDB/PostgreSQL create/drop/backup
@@ -75,6 +93,9 @@ HestiaCP, and aaPanel.
 - User creation with admin/user roles
 - Password change with current-password verification
 - Admin-only user management
+- **WHM-style Feature Manager** (`/api/feature-manager`): feature groups,
+  per-user overrides, and a dedicated **IP pool** for shared/dedicated
+  allocations
 
 ### CLI (Click)
 - 25+ commands: `init`, `site`, `backup`, `files`, `database`, `ssl`, `firewall`, `audit`, `security-scan`, `serve`, `list`, `install`, `update`, `status`, `system`, `releases`, `self-update`
@@ -195,28 +216,20 @@ atulya_launch/
   utils.py             # Platform helpers, template rendering
   docker.py            # Docker container management
   drivers/             # OS driver scaffold: Linux, macOS, Windows
+  ai/
+    predictive.py      # AI predictive-health engine (sampling/forecast/risk)
   web/
     __init__.py
     app.py             # FastAPI application factory
     auth.py            # Password hashing, sessions, RBAC decorators
     database.py        # SQLite schema, connection management
-    routes/
-      dashboard.py     # Dashboard page
-      sites.py         # Website CRUD
-      dns.py           # DNS zones and records
-      email.py         # Email account management
-      databases.py     # Database management
-      ssl.py           # SSL certificate management
-      files.py         # File manager
-      backups.py       # Backup create/restore
-      monitoring.py    # Live system metrics
-      firewall.py      # UFW and Fail2Ban
-      apps.py          # App installer
-      docker.py        # Docker container management
-      settings.py      # User management, panel config
-templates/             # Jinja2 HTML templates
-tests/                 # 59 tests (unit + integration + web)
-scripts/               # Installers (bash, PowerShell, Python)
+    twofa_store.py     # Unified SQLite-backed TOTP/2FA store
+    routes/            # 27 page routers (dashboard, sites, dns, email, ...)
+    api/               # 94 API modules incl. ai, dnssec, addon-domains,
+                       #   site-publisher, email-auth, feature-manager, v1
+  templates/             # Jinja2 HTML templates
+  tests/                 # 140 tests (unit + integration + web)
+  scripts/               # Installers (bash, PowerShell, Python)
 ```
 
 ### Production Driver Scaffold
@@ -244,7 +257,13 @@ pytest tests/ -v
 | `test_core_extended.py` | 20 | Nginx plans, security scan, file operations, domain validation |
 | `test_auth.py` | 9 | Password hashing, user creation, authentication, sessions |
 | `test_database.py` | 9 | SQLite schema, CRUD for zones/records/email/DBs/SSL/audit |
-| `test_web.py` | 10 | Login flow, session cookies, API auth, dashboard access |
+| `test_web.py` | 15 | Login flow, session cookies, CSRF, API auth, dashboard, router imports |
+| `test_features.py` | 28 | Migration, plans, apps, cron, logs, security audit, load test, servers |
+| `test_drivers.py` | 19 | Linux BIND/DB/SSL/firewall plans, macOS/Windows scaffolds |
+| `test_dns_service.py` | 2 | DNS zone/record apply plans |
+| `test_mail_service.py` | 2 | Mail account create/delete + apply plan |
+| `test_basic.py` | 9 | Utils, platform detection, core site/db/backup/ssl |
+| `test_new_features.py` | 16 | AI predictive health, DNSSEC, addon domains, site publisher, SPF/DMARC, feature manager, IP pool, unified 2FA, v1 API |
 | `test_installer.py` | 1 | Installer dry-run |
 
 ## Security
@@ -346,6 +365,37 @@ reproduction steps, impact, and suggested fix.
 - Backups: S3, encryption, scheduled DB backups, cloud backup, import/export
 - Nginx cache, Redis cache, OpenCache, phpMyAdmin installer, port scanner
 - VPN management, Node.js + Python app deploy, Git deploy
+
+## What's New in v1.1.0
+
+### Reliability Fixes
+- `/api/health` no longer crashes on Windows (`os.getloadavg` + `systemctl`
+  platform guards).
+- `PhpFpmDriver.status()` now returns a real result; `FirewallDriver.list_rules`
+  dead code removed.
+- All ~85 `datetime.utcnow()` usages replaced with timezone-aware UTC.
+
+### Unified 2FA
+- One SQLite-backed store (`web/twofa_store.py`) replaces three divergent
+  TOTP implementations across `core`, `web/auth`, and the API — login
+  challenge, settings page, and API now agree.
+
+### cPanel-grade missing features
+- **DNSSEC management** (`/api/dnssec`)
+- **Addon domains** (`/api/addon-domains`)
+- **Site Publisher** (`/api/site-publisher`)
+- **SPF/DMARC manager** (`/api/email-auth`) with DNS TXT auto-sync
+- **WHM-style Feature Manager + IP pool** (`/api/feature-manager`)
+
+### AI Operations
+- Predictive health engine (`atulya_launch/ai/predictive.py`) with trend
+  forecasting, risk scoring, and safe automated actions.
+- `/api/ai/predict`, `/api/ai/history`, `/api/ai/automate`.
+- Optional Tantra-LLM enrichment when installed.
+
+### Versioned API
+- `/api/v1/meta` + `/api/v1/health`; OpenAPI 3.1 spec at `/api/openapi.json`.
+- Test suite grew to **140 passing** (was 124).
 
 ## License
 

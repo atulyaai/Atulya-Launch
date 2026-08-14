@@ -122,7 +122,7 @@ def default_config() -> dict[str, Any]:
     return {
         "panel": {
             "name": "Atulya Launch",
-            "version": "0.2.0",
+            "version": "1.1.0",
             "created_at": None,
             "admin_user": "admin",
             "api_token": None,

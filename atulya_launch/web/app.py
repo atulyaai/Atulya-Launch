@@ -21,7 +21,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, Resp
 from fastapi.templating import Jinja2Templates
 
 
-from .. import core
+from .. import core, __version__
 from .database import init_db, audit_log
 from .auth import get_current_user, authenticate, create_user, destroy_session, validate_partial_session, destroy_partial_session, complete_2fa_login, _verify_totp
 from .flash import add_flash, request_flashes
@@ -156,7 +156,7 @@ def _register_api_routers(app: FastAPI) -> dict[str, list[str]]:
 def _install_template_globals(template_sets: list[Any]) -> None:
     """Install shared template helpers across route-local Jinja environments."""
     for template_set in template_sets:
-        template_set.env.globals["panel_version"] = "1.0.0"
+        template_set.env.globals["panel_version"] = __version__
         template_set.env.globals["csrf_token"] = csrf.generate
         template_set.env.globals["get_flashed_messages"] = request_flashes
 
@@ -504,7 +504,7 @@ def create_app() -> FastAPI:
         audit_log(user["username"], "auth.password_change", "ok")
         return JSONResponse({"ok": True, "message": "Password changed successfully"})
 
-    templates.env.globals["panel_version"] = "1.0.0"
+    templates.env.globals["panel_version"] = __version__
     templates.env.globals["csrf_token"] = csrf.generate
     templates.env.globals["get_flashed_messages"] = request_flashes
 

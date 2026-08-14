@@ -6,21 +6,30 @@ host-level integration testing, security review, and packaging.
 
 Detailed phase scaffolds live in [docs/production-plan](docs/production-plan/README.md).
 
-## Current Truth (as of v1.0.0)
+## Current Truth (as of v1.1.0)
 
-- **596 mounted routes** across 33 feature groups; all 109 tests passing (~75s).
-- **API surface**: 87 modules, ~459 KB of non-trivial code under `web/api/`.
+- **610 mounted routes**: 470 API + 140 page decorators across 94 API modules
+  and 27 page routers; OpenAPI 3.1 spec at `/api/openapi.json`. All 140 tests
+  passing.
 - **Auth**: PBKDF2-SHA256 (200k iter), session cookies, bearer tokens, 2FA (TOTP),
   rate limiting, account lockout, password policy, login history, IP allow/deny.
+- **2FA**: single unified SQLite store (`web/twofa_store.py`) shared by the
+  login challenge, settings page, and API.
 - **Audit**: JSONL audit log + audit page; every write action recorded.
 - **Driver layer**: `drivers/` exists with Linux/macOS/Windows shells plus
   `common.py` (apt/dnf/pacman/brew/choco, systemd/launchd/sc) and a real
   `mail_service.py` driver.
+- **AI operations**: `ai/predictive.py` predictive-health engine with trend
+  forecasting, risk scoring, and safe automated actions
+  (`/api/ai/predict`, `/api/ai/history`, `/api/ai/automate`).
 - **Service code (real, not planned)**:
   - Mail: `web/mail_service.py` + `drivers/mail_service.py` write Postfix
     `main.cf`, Dovecot `dovecot.conf`, vmailbox maps, passwd file, DKIM keys.
-  - DNS: `web/dns_service.py` + BIND zone template + `BindDnsDriver`.
-  - Sites: `web/sites_service.py` + `FileWebServerDriver` for Nginx vhosts.
+  - DNS: `web/dns_service.py` + BIND zone template + `BindDnsDriver`, plus
+    DNSSEC management (`/api/dnssec`).
+  - Sites: `web/sites_service.py` + `FileWebServerDriver` for Nginx vhosts;
+    addon domains and site publisher on top.
+  - Email auth: SPF/DMARC manager (`/api/email-auth`) with DNS TXT sync.
   - SSL: `web/api/letsencryptwildcard.py` (DNS-01) + standard certbot flow.
   - SSH terminal: `web/api/sshterminal.py` (asyncssh + WebSocket PTY).
 - **Installer**: `scripts/install-server.sh` (272 lines) installs Python 3.11,
@@ -28,6 +37,8 @@ Detailed phase scaffolds live in [docs/production-plan](docs/production-plan/REA
   Fail2Ban, Docker; creates systemd unit. Untested on a clean host.
 - **Plugins shipped**: reseller (plans/limits/branding), webmail, antivirus,
   cms_installer, security_advisor, analytics.
+- **WHM-style controls**: feature groups + per-user overrides and an IP pool
+  (`/api/feature-manager`).
 - **macOS/Windows drivers**: 1.4 KB dataclass shells only — not implemented.
 - **Driver consolidation**: feature modules still call `utils.run_command`
   directly in places instead of going through the driver layer.
@@ -140,14 +151,41 @@ Exit criteria:
 - Release artifacts install, update, roll back, recover on clean hosts.
 - A second-host restore drill is documented and CI-runnable.
 
+## Phase 7 - AI Operations ***(first slice shipped in v1.1.0)***
+
+Goal: make the panel an "AI-native hosting control panel" that predicts and
+self-heals, on top of the existing driver/audit/API foundations.
+
+- [x] Predictive health engine (`ai/predictive.py`): sampling → history →
+      linear-trend forecast → risk scoring → suggested + safe automated
+      actions (`/api/ai/predict`, `/api/ai/history`, `/api/ai/automate`).
+- [ ] Natural-language command layer: "create a WordPress site example.com with
+      Redis caching and SSL" maps to the existing sites/rediscache/SSL APIs.
+- [ ] Log-based diagnostics: feed `/api/logs` + `/api/errorlogs` into an
+      LLM analysis to produce root cause + one-click fix.
+- [ ] Auto-optimizer: nginx/php-fpm tuning proposals from `bandwidth` and
+      `resourcehistory` trends.
+- [ ] Learning backup scheduler: learn low-usage windows and propose/shift
+      backup times from the `backup` event history.
+- [ ] LLM provider abstraction (Tantra-LLM first, OpenAI-compatible fallback)
+      with per-action approvals and full audit logging.
+
+Exit criteria:
+
+- Every AI action is auditable and reversible (rollback via driver layer).
+- Destructive AI actions require operator approval; only safe automations
+  (backup rotation/log cleanup) run unattended.
+- AI endpoints continue to work with zero external AI dependencies installed.
+
 ## Priority Order (updated)
 
 1. **Clean-host install validation** (Phase 1) — gate everything else.
 2. Driver consolidation (Phase 2) — remove code-duplication risk.
 3. Security review + signed releases (Phase 4) — needed before public launch.
 4. Operator UX (Phase 5) — needed for daily-use credibility.
-5. macOS/Windows drivers (Phase 3) — nice-to-have, not blocker.
-6. Enterprise + ecosystem (Phase 6) — post-launch.
+5. **AI Operations (Phase 7)** — differentiator; first slice already shipped.
+6. macOS/Windows drivers (Phase 3) — nice-to-have, not blocker.
+7. Enterprise + ecosystem (Phase 6) — post-launch.
 
 ## Never Claim Production Ready Until
 

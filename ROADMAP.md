@@ -6,11 +6,14 @@ host-level integration testing, security review, and packaging.
 
 Detailed phase scaffolds live in [docs/production-plan](docs/production-plan/README.md).
 
-## Current Truth (as of v1.1.0)
+## Current Truth (as of v1.1.1)
 
-- **610 mounted routes**: 470 API + 140 page decorators across 94 API modules
-  and 27 page routers; OpenAPI 3.1 spec at `/api/openapi.json`. All 140 tests
-  passing.
+- **628 mounted routes** across 94 API modules and 27 page routers; OpenAPI 3.1
+  spec at `/api/openapi.json`. All 152 tests passing.
+- **AI**: predictive health engine (`/api/ai/predict`, `/api/ai/history`,
+  `/api/ai/automate`) plus a natural-language command layer (`/api/ai/command`)
+  that parses free-text ops ("create a WordPress site example.com with Redis
+  cache and SSL") into an ordered, dry-runnable plan over the core APIs.
 - **Auth**: PBKDF2-SHA256 (200k iter), session cookies, bearer tokens, 2FA (TOTP),
   rate limiting, account lockout, password policy, login history, IP allow/deny.
 - **2FA**: single unified SQLite store (`web/twofa_store.py`) shared by the
@@ -151,7 +154,7 @@ Exit criteria:
 - Release artifacts install, update, roll back, recover on clean hosts.
 - A second-host restore drill is documented and CI-runnable.
 
-## Phase 7 - AI Operations ***(first slice shipped in v1.1.0)***
+## Phase 7 - AI Operations ***(2 slices shipped in v1.1.0/v1.1.1)***
 
 Goal: make the panel an "AI-native hosting control panel" that predicts and
 self-heals, on top of the existing driver/audit/API foundations.
@@ -159,8 +162,11 @@ self-heals, on top of the existing driver/audit/API foundations.
 - [x] Predictive health engine (`ai/predictive.py`): sampling → history →
       linear-trend forecast → risk scoring → suggested + safe automated
       actions (`/api/ai/predict`, `/api/ai/history`, `/api/ai/automate`).
-- [ ] Natural-language command layer: "create a WordPress site example.com with
-      Redis caching and SSL" maps to the existing sites/rediscache/SSL APIs.
+- [x] Natural-language command layer (`ai/nlcommand.py`): "create a WordPress
+      site example.com with Redis caching and SSL" → parsed `Intent` →
+      ordered auditable `Plan` → dry-run review → approved apply via
+      `/api/ai/command`. Reuses the existing sites/rediscache/database/SSL
+      core APIs. Optional Tantra-LLM enrichment; deterministic without it.
 - [ ] Log-based diagnostics: feed `/api/logs` + `/api/errorlogs` into an
       LLM analysis to produce root cause + one-click fix.
 - [ ] Auto-optimizer: nginx/php-fpm tuning proposals from `bandwidth` and
@@ -183,7 +189,7 @@ Exit criteria:
 2. Driver consolidation (Phase 2) — remove code-duplication risk.
 3. Security review + signed releases (Phase 4) — needed before public launch.
 4. Operator UX (Phase 5) — needed for daily-use credibility.
-5. **AI Operations (Phase 7)** — differentiator; first slice already shipped.
+5. **AI Operations (Phase 7)** — differentiator; 2 slices already shipped.
 6. macOS/Windows drivers (Phase 3) — nice-to-have, not blocker.
 7. Enterprise + ecosystem (Phase 6) — post-launch.
 

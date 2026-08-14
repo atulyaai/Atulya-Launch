@@ -9,13 +9,14 @@ HestiaCP, and aaPanel.
 
 > **Status: feature-complete MVP, hardening for clean-host install.** The panel
 > ships a working FastAPI app, CLI, full auth/session/2FA layer, audit logging,
-> 610 mounted routes (470 API + 140 page), 94 API modules, and **140 passing tests**.
+> 628 mounted routes (470 API + 140 page + router auto-discovery), 94 API modules, and **152 passing tests**.
 > Phase 3 services are implemented for mail (Postfix/Dovecot/OpenDKIM), SSL
 > (Let's Encrypt + wildcard DNS-01), SSH terminal (asyncssh + WebSocket), and
-> Nginx config. An AI predictive-health engine and a versioned `/api/v1`
-> surface with OpenAPI 3.1 are included. Remaining work before a public
-> "production cPanel replacement" claim: clean-host install validation,
-> security audit, signed releases, and macOS/Windows driver implementation.
+> Nginx config. An AI predictive-health engine, a natural-language command
+> layer (`/api/ai/command`), and a versioned `/api/v1` surface with OpenAPI 3.1
+> are included. Remaining work before a public "production cPanel replacement"
+> claim: clean-host install validation, security audit, signed releases, and
+> macOS/Windows driver implementation.
 
 ## What's Included
 
@@ -36,6 +37,10 @@ HestiaCP, and aaPanel.
 ### AI Operations (`/api/ai`)
 - **Predictive health** (`/api/ai/predict`): metric sampling → rolling history
   → linear-trend forecast → risk scoring (healthy/attention/critical)
+- **Natural-language commands** (`/api/ai/command`): free-text operator
+  commands ("create a WordPress site example.com with Redis cache and SSL")
+  → parsed intent → ordered auditable plan → dry-run review → approved apply
+  (`atulya_launch/ai/nlcommand.py`)
 - **Suggested actions** per metric (restart heavy process, rotate backups,
   review workers) plus safe automated actions (`/api/ai/automate`)
 - Optional Tantra-LLM enrichment when installed; works standalone without it
@@ -228,7 +233,7 @@ atulya_launch/
     api/               # 94 API modules incl. ai, dnssec, addon-domains,
                        #   site-publisher, email-auth, feature-manager, v1
   templates/             # Jinja2 HTML templates
-  tests/                 # 140 tests (unit + integration + web)
+  tests/                 # 152 tests (unit + integration + web)
   scripts/               # Installers (bash, PowerShell, Python)
 ```
 
@@ -264,6 +269,7 @@ pytest tests/ -v
 | `test_mail_service.py` | 2 | Mail account create/delete + apply plan |
 | `test_basic.py` | 9 | Utils, platform detection, core site/db/backup/ssl |
 | `test_new_features.py` | 16 | AI predictive health, DNSSEC, addon domains, site publisher, SPF/DMARC, feature manager, IP pool, unified 2FA, v1 API |
+| `test_nlcommand.py` | 12 | AI natural-language parsing, plan assembly, dry-run + apply, `/api/ai/command` |
 | `test_installer.py` | 1 | Installer dry-run |
 
 ## Security
@@ -366,6 +372,21 @@ reproduction steps, impact, and suggested fix.
 - Nginx cache, Redis cache, OpenCache, phpMyAdmin installer, port scanner
 - VPN management, Node.js + Python app deploy, Git deploy
 
+## What's New in v1.1.1
+
+### AI Natural-Language Command Layer
+- New `atulya_launch/ai/nlcommand.py`: deterministic intent parser + plan
+  assembler. Free-text commands like *"create a WordPress site example.com
+  with Redis cache and SSL"* become an ordered, auditable plan reusing the
+  panel's existing core APIs.
+- `POST /api/ai/command` — `{command, dry_run=true}` returns the proposed plan;
+  `dry_run=false` executes approved steps with a full audit trail.
+- Actions: create/delete site, enable SSL, enable cache; app installs
+  (WordPress, Nextcloud, Laravel, Ghost, Flask, Django) with auto PHP/DB wiring.
+- Works with zero external dependencies; optional Tantra-LLM enrichment when
+  installed.
+- Test suite: **152 passing** (was 140).
+
 ## What's New in v1.1.0
 
 ### Reliability Fixes
@@ -390,12 +411,13 @@ reproduction steps, impact, and suggested fix.
 ### AI Operations
 - Predictive health engine (`atulya_launch/ai/predictive.py`) with trend
   forecasting, risk scoring, and safe automated actions.
-- `/api/ai/predict`, `/api/ai/history`, `/api/ai/automate`.
+- `/api/ai/predict`, `/api/ai/history`, `/api/ai/automate`,
+  `/api/ai/command`.
 - Optional Tantra-LLM enrichment when installed.
 
 ### Versioned API
 - `/api/v1/meta` + `/api/v1/health`; OpenAPI 3.1 spec at `/api/openapi.json`.
-- Test suite grew to **140 passing** (was 124).
+- Test suite grew to **152 passing** (was 140).
 
 ## License
 

@@ -1,5 +1,37 @@
 # Changelog
 
+## v1.1.1 (2026-08-15)
+
+### AI Natural-Language Command Layer
+- New `atulya_launch/ai/nlcommand.py`: deterministic intent parser that turns
+  free-text operator commands ("create a WordPress site example.com with Redis
+  cache and SSL") into a structured `Intent`, plus a plan assembler that maps
+  the intent to an ordered, auditable `Plan` reusing the panel's existing core
+  APIs (`site_create`, `site_set_php_version`, `database_create`,
+  `wordpress_install`/`app_install`, `ssl_issue_letsencrypt`,
+  `nginx_apply_and_reload`, `site_delete`).
+- Supported actions: `CREATE_SITE` (static / PHP / DB / app installs with
+  optional cache + SSL), `DELETE_SITE`, `ENABLE_SSL`, `ENABLE_CACHE`.
+- App aliases (wp, nextcloud, laravel, ghost, flask, django), php version
+  extraction, cache detection, staging flag, delete vs create disambiguation.
+- `PlanStep` / `Plan` carry per-step state (`executed`, `ok`, `result`) so
+  partial runs are inspectable; `apply_plan(dry_run=True)` returns the full
+  proposal without touching anything.
+- Optional Tantra-LLM enrichment: when the local Tantra package is importable,
+  `enrich_with_llm()` round-trips an LLM-parsed JSON intent back into the same
+  `Intent` model; heuristic parsing always works with zero external deps.
+- New endpoint `POST /api/ai/command` (`web/api/aicommand.py`):
+  `{command, dry_run=true}` → parsed intent + proposed plan; `dry_run=false`
+  executes approved steps and records a `ai.command` audit entry. Confidence
+  < 0.5 returns 422 asking for confirmation.
+- `web/app.py` auto-registers the router (628 total routes).
+
+### Tests
+- 12 new tests in `tests/test_nlcommand.py`: parsing (WP/delete/SSL/PHP/aliases),
+  plan ordering (full WP pipeline, minimal static site, delete plan),
+  dry-run execution, executor crash-safety, `/api/ai/command` dry-run + empty
+  rejection. Total: **152 tests passing**.
+
 ## v1.1.0 (2026-08-15)
 
 ### Reliability & Cross-Platform Fixes

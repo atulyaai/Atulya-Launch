@@ -1,6 +1,5 @@
 """Database user permissions management API."""
 
-import json
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel

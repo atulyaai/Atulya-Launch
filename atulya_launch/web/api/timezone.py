@@ -1,8 +1,5 @@
 """Timezone configuration API."""
 
-import json
-import subprocess
-from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -24,7 +21,6 @@ def _get_current_timezone() -> str:
             if "/zoneinfo/" in tz_path:
                 return tz_path.split("/zoneinfo/")[-1]
 
-    import time
     return "UTC"
 
 

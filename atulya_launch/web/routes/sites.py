@@ -3,7 +3,6 @@ from fastapi import APIRouter, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
-from typing import Any
 
 from ... import core
 from ..auth import require_auth
@@ -63,7 +62,7 @@ async def sites_delete(request: Request, domain: str = Form(...)) -> RedirectRes
 async def sites_enable(request: Request, domain: str) -> JSONResponse:
     """Enable a site."""
     try:
-        result = sites_service.toggle_site(domain, True)
+        sites_service.toggle_site(domain, True)
         return JSONResponse({"status": "enabled", "domain": domain})
     except ValueError as e:
         return JSONResponse({"error": str(e)}, status_code=404)
@@ -74,7 +73,7 @@ async def sites_enable(request: Request, domain: str) -> JSONResponse:
 async def sites_disable(request: Request, domain: str) -> JSONResponse:
     """Disable a site."""
     try:
-        result = sites_service.toggle_site(domain, False)
+        sites_service.toggle_site(domain, False)
         return JSONResponse({"status": "disabled", "domain": domain})
     except ValueError as e:
         return JSONResponse({"error": str(e)}, status_code=404)

@@ -110,10 +110,9 @@ def _job_ssl_auto_renew():
             ["certbot", "renew", "--quiet", "--deploy-hook", "systemctl reload nginx"],
             capture_output=True, text=True, timeout=300
         )
-        audit_event("job.ssl_renew", "ok" if result.returncode == 0 else "failed",
-                     {"output": result.stdout[:500]})
+        audit_log("system", "job.ssl_renew", "ok" if result.returncode == 0 else "failed", {"output": result.stdout[:500]})
     except Exception as e:
-        audit_event("job.ssl_renew", "error", {"error": str(e)})
+        audit_log("system", "job.ssl_renew", "error", {"error": str(e)})
 
 
 def _job_backup_cleanup():
@@ -130,15 +129,14 @@ def _job_backup_cleanup():
             if f.stat().st_mtime < cutoff:
                 f.unlink()
                 removed += 1
-        audit_event("job.backup_cleanup", "ok", {"removed": removed})
+        audit_log("system", "job.backup_cleanup", "ok", {"removed": removed})
     except Exception as e:
-        audit_event("job.backup_cleanup", "error", {"error": str(e)})
+        audit_log("system", "job.backup_cleanup", "error", {"error": str(e)})
 
 
 def _job_session_cleanup():
     """Background job: remove expired sessions."""
     try:
-        from datetime import datetime, timezone
         with connect() as conn:
             cursor = conn.execute(
                 "DELETE FROM sessions WHERE expires_at < ?",
@@ -146,9 +144,9 @@ def _job_session_cleanup():
             )
             removed = cursor.rowcount
             conn.commit()
-        audit_event("job.session_cleanup", "ok", {"removed": removed})
+        audit_log("system", "job.session_cleanup", "ok", {"removed": removed})
     except Exception as e:
-        audit_event("job.session_cleanup", "error", {"error": str(e)})
+        audit_log("system", "job.session_cleanup", "error", {"error": str(e)})
 
 
 def _job_rate_limit_cleanup():
@@ -163,9 +161,9 @@ def _job_rate_limit_cleanup():
             )
             removed = cursor.rowcount
             conn.commit()
-        audit_event("job.rate_limit_cleanup", "ok", {"removed": removed})
+        audit_log("system", "job.rate_limit_cleanup", "ok", {"removed": removed})
     except Exception as e:
-        audit_event("job.rate_limit_cleanup", "error", {"error": str(e)})
+        audit_log("system", "job.rate_limit_cleanup", "error", {"error": str(e)})
 
 
 def _job_disk_usage_check():
@@ -175,11 +173,10 @@ def _job_disk_usage_check():
         total, used, free = shutil.disk_usage("/")
         percent = (used / total) * 100 if total else 0
         if percent > 80:
-            audit_event("job.disk_alert", "warning",
-                         {"percent": round(percent, 1), "total": total, "used": used})
-        audit_event("job.disk_check", "ok", {"percent": round(percent, 1)})
+            audit_log("system", "job.disk_alert", "warning", {"percent": round(percent, 1), "total": total, "used": used})
+        audit_log("system", "job.disk_check", "ok", {"percent": round(percent, 1)})
     except Exception as e:
-        audit_event("job.disk_check", "error", {"error": str(e)})
+        audit_log("system", "job.disk_check", "error", {"error": str(e)})
 
 
 def stop_scheduler():

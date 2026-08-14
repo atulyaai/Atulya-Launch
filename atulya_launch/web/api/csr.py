@@ -43,7 +43,6 @@ def generate_csr(body: CSRGenerateRequest, user: dict = Depends(get_current_user
     if not utils.is_linux():
         raise HTTPException(status_code=400, detail="CSR generation is only supported on Linux")
 
-    import subprocess
     import tempfile
 
     key_path = None

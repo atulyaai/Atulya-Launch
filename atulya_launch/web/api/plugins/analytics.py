@@ -1,12 +1,10 @@
 """Usage Analytics - Bandwidth, email, DB QPS, resource usage history."""
 
 import json
-import time
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from atulya_launch import utils

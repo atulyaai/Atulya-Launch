@@ -49,7 +49,7 @@ async def ufw_disable(request: Request) -> RedirectResponse:
 @require_auth
 async def ufw_allow(request: Request, port: str = Form(...), proto: str = Form("tcp")) -> RedirectResponse:
     """Allow a port through the firewall."""
-    result: dict = core.firewall_allow(port, proto)
+    core.firewall_allow(port, proto)
     audit_log(request.state.user["username"], "firewall.ufw_allow", "ok", {"port": port, "proto": proto})
     return RedirectResponse("/firewall", status_code=302)
 
@@ -58,7 +58,7 @@ async def ufw_allow(request: Request, port: str = Form(...), proto: str = Form("
 @require_auth
 async def ufw_deny(request: Request, port: str = Form(...), proto: str = Form("tcp")) -> RedirectResponse:
     """Deny a port through the firewall."""
-    result: dict = core.firewall_deny(port, proto)
+    core.firewall_deny(port, proto)
     audit_log(request.state.user["username"], "firewall.ufw_deny", "ok", {"port": port, "proto": proto})
     return RedirectResponse("/firewall", status_code=302)
 

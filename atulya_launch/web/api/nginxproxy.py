@@ -55,27 +55,27 @@ def _generate_proxy_config(
 ) -> str:
     lines = [
         f"server {{",
-        f"    listen 80;",
+        "    listen 80;",
         f"    server_name {domain};",
-        f"",
+        "",
         f"    location / {{",
         f"        proxy_pass http://127.0.0.1:{port};",
-        f"        proxy_set_header Host $host;",
-        f"        proxy_set_header X-Real-IP $remote_addr;",
-        f"        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;",
-        f"        proxy_set_header X-Forwarded-Proto $scheme;",
+        "        proxy_set_header Host $host;",
+        "        proxy_set_header X-Real-IP $remote_addr;",
+        "        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;",
+        "        proxy_set_header X-Forwarded-Proto $scheme;",
     ]
     if websocket:
         lines.extend([
-            f"        proxy_http_version 1.1;",
-            f'        proxy_set_header Upgrade $http_upgrade;',
-            f'        proxy_set_header Connection "upgrade";',
-            f"        proxy_read_timeout 86400;",
+            "        proxy_http_version 1.1;",
+            '        proxy_set_header Upgrade $http_upgrade;',
+            '        proxy_set_header Connection "upgrade";',
+            "        proxy_read_timeout 86400;",
         ])
     if headers:
         for key, value in headers.items():
             lines.append(f"        proxy_set_header {key} {value};")
-    lines.extend([f"    }}", f"}}"])
+    lines.extend(["    }}", "}}"])
     if extra:
         lines.insert(-1, extra)
     return "\n".join(lines) + "\n"

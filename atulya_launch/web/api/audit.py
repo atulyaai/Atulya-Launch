@@ -1,7 +1,6 @@
 """Audit trail API — backed by SQLite audit_log table."""
 
 import json
-from typing import Optional
 from fastapi import APIRouter, Depends, Query
 
 from atulya_launch.web.auth import get_current_user

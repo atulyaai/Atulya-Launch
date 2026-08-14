@@ -4,7 +4,6 @@ from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
 
-from ... import core
 from ...docker import (
     DOCKER_APPS, docker_available, docker_list_containers,
     docker_list_images, docker_run, docker_stop, docker_start, docker_remove,

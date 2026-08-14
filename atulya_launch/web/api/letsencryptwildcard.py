@@ -1,9 +1,7 @@
 """Let's Encrypt Wildcard SSL via DNS-01 Challenge API."""
 
 import json
-import subprocess
 import shutil
-import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional

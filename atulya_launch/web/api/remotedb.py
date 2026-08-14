@@ -101,10 +101,6 @@ def _apply_hba_rules(allow_from: list):
     if not utils.is_linux():
         return
 
-    hba_path = "/etc/mysql/mysql.conf.d/mysqld.cnf"
-    if not utils.is_linux():
-        return
-
     result = utils.run_command(["mysql", "-N", "-e", "SELECT VERSION();"], check=False)
     is_mysql = result is not None and result.returncode == 0
 

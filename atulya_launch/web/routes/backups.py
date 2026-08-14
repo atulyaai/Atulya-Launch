@@ -43,7 +43,7 @@ async def backup_create(request: Request, name: str = Form("")) -> RedirectRespo
 async def backup_restore(request: Request, name: str = Form(...)) -> RedirectResponse:
     """Restore from a backup."""
     try:
-        result: dict = backup_service.restore_backup(name)
+        backup_service.restore_backup(name)
         audit_log(request.state.user["username"], "backup.restore", "ok", {"name": name})
     except ValueError as e:
         audit_log(request.state.user["username"], "backup.restore", "error", {"name": name, "error": str(e)})

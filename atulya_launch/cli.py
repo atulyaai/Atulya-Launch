@@ -406,8 +406,6 @@ def serve(host, port, workers, https, log_level):
     port = int(port or _os.environ.get("PANEL_PORT", "8080"))
     workers = int(_os.environ.get("PANEL_WORKERS", str(workers)))
     core.ensure_dirs()
-    from .web.app import create_app
-    app = create_app()
 
     if https and host != "127.0.0.1":
         import subprocess as _sp

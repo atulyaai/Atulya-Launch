@@ -1,7 +1,6 @@
 """Subdomain management API — backed by SQLite."""
 
 import datetime
-import json
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel

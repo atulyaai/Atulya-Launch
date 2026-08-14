@@ -1,7 +1,6 @@
 """IPv6 Management API."""
 
 import json
-import subprocess
 from pathlib import Path
 from typing import Optional
 

@@ -23,7 +23,7 @@ async def webmail_page(request: Request):
 @router.post("/install")
 @require_auth
 async def webmail_install(request: Request):
-    result = core.webmail_install()
+    core.webmail_install()
     return RedirectResponse("/webmail", status_code=302)
 
 

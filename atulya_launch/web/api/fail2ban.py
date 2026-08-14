@@ -1,10 +1,8 @@
 """Fail2ban Management API."""
 
 import json
-import re
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel

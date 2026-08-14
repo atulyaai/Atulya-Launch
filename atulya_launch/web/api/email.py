@@ -1,7 +1,6 @@
 """Email management API (Postfix / Dovecot) with SQLite backend."""
 
 import datetime
-from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 

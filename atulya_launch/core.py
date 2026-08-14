@@ -21,6 +21,8 @@ from typing import Any
 
 import requests
 
+from atulya_launch import utils
+
 
 def _default_config_dir() -> Path:
     """Determine the base config directory from env or default home path.
@@ -583,7 +585,7 @@ def service_summary() -> dict[str, str]:
 
 def service_state(name: str) -> str:
     """Check whether a systemd service is active."""
-    if get_platform() != "linux" or not shutil.which("systemctl"):
+    if utils.get_platform() != "linux" or not shutil.which("systemctl"):
         return "unknown"
     from atulya_launch.drivers import get_platform_driver
     driver = get_platform_driver(dry_run=False)
@@ -785,22 +787,6 @@ def detect_web_server() -> str | None:
     except (FileNotFoundError, subprocess.TimeoutExpired):
         pass
     return None
-
-
-def get_platform() -> str:
-    """Return the current OS platform slug."""
-    if sys.platform.startswith("linux"):
-        return "linux"
-    if sys.platform == "darwin":
-        return "macos"
-    if sys.platform == "win32":
-        return "windows"
-    return sys.platform
-
-
-def is_linux() -> bool:
-    """Check if running on Linux."""
-    return sys.platform.startswith("linux")
 
 
 def get_arch() -> str:
@@ -1073,7 +1059,7 @@ def nginx_apply_and_reload(domain: str) -> dict[str, Any]:
     site: dict[str, Any] | None = site_get(domain)
     if not site:
         return {"ok": False, "error": f"site not found: {domain}"}
-    if get_platform() != "linux":
+    if utils.get_platform() != "linux":
         return {"ok": False, "error": "nginx apply only supported on Linux"}
 
     source: Path = Path(site.get("nginx_config", ""))
@@ -1139,7 +1125,7 @@ def database_create(name: str, db_type: str = "mysql") -> dict[str, Any]:
                 conn.close()
             return {"ok": True, "name": name, "type": db_type}
         except ImportError:
-            if get_platform() != "linux":
+            if utils.get_platform() != "linux":
                 return {"ok": False, "error": "pymysql not installed and subprocess only works on Linux"}
             from atulya_launch.drivers import get_platform_driver
             result = get_platform_driver(dry_run=False).databases.create(name, db_type)
@@ -1147,7 +1133,7 @@ def database_create(name: str, db_type: str = "mysql") -> dict[str, Any]:
         except Exception as e:
             return {"ok": False, "error": str(e)}
     elif db_type == "postgresql":
-        if get_platform() != "linux":
+        if utils.get_platform() != "linux":
             return {"ok": False, "error": "PostgreSQL only supported on Linux"}
         from atulya_launch.drivers import get_platform_driver
         result = get_platform_driver(dry_run=False).databases.create(name, db_type)
@@ -1170,7 +1156,7 @@ def database_drop(name: str, db_type: str = "mysql") -> dict[str, Any]:
                 conn.close()
             return {"ok": True, "name": name}
         except ImportError:
-            if get_platform() != "linux":
+            if utils.get_platform() != "linux":
                 return {"ok": False, "error": "pymysql not installed and subprocess only works on Linux"}
             from atulya_launch.drivers import get_platform_driver
             result = get_platform_driver(dry_run=False).databases.drop(name, db_type)
@@ -1178,7 +1164,7 @@ def database_drop(name: str, db_type: str = "mysql") -> dict[str, Any]:
         except Exception as e:
             return {"ok": False, "error": str(e)}
     elif db_type == "postgresql":
-        if get_platform() != "linux":
+        if utils.get_platform() != "linux":
             return {"ok": False, "error": "PostgreSQL only supported on Linux"}
         from atulya_launch.drivers import get_platform_driver
         result = get_platform_driver(dry_run=False).databases.drop(name, db_type)
@@ -1221,7 +1207,7 @@ def database_backup(name: str, db_type: str = "mysql") -> dict[str, Any]:
             with gzip.open(backup_path, "wt", encoding="utf-8") as f:
                 f.write(sql_dump)
         except ImportError:
-            if get_platform() != "linux":
+            if utils.get_platform() != "linux":
                 return {"ok": False, "error": "pymysql not installed and mysqldump only works on Linux"}
             from atulya_launch.drivers import get_platform_driver
             result = get_platform_driver(dry_run=False).databases.backup(name, backup_path, db_type)
@@ -1232,7 +1218,7 @@ def database_backup(name: str, db_type: str = "mysql") -> dict[str, Any]:
         except Exception as e:
             return {"ok": False, "error": str(e)}
     elif db_type == "postgresql":
-        if get_platform() != "linux":
+        if utils.get_platform() != "linux":
             return {"ok": False, "error": "PostgreSQL backup only supported on Linux"}
         from atulya_launch.drivers import get_platform_driver
         result = get_platform_driver(dry_run=False).databases.backup(name, backup_path, db_type)
@@ -1271,7 +1257,7 @@ def ssl_issue_letsencrypt(domain: str, *, staging: bool = False) -> dict[str, An
     support Caddy, acme-dns, and other ACME clients without code changes
     here. The original certbot-specific flags are preserved for now.
     """
-    if get_platform() != "linux":
+    if utils.get_platform() != "linux":
         return {"ok": False, "error": "SSL issuance only supported on Linux"}
     cert_dir: Path = CONFIG_DIR / "ssl" / domain
     cert_dir.mkdir(parents=True, exist_ok=True)
@@ -1298,7 +1284,7 @@ def ssl_issue_letsencrypt(domain: str, *, staging: bool = False) -> dict[str, An
 
 def ssl_renew(domain: str) -> dict[str, Any]:
     """Renew an existing SSL certificate via certbot."""
-    if get_platform() != "linux":
+    if utils.get_platform() != "linux":
         return {"ok": False, "error": "SSL renewal only supported on Linux"}
     from atulya_launch.drivers import get_platform_driver
     result = get_platform_driver(dry_run=False).ssl.renew(domain)
@@ -1310,7 +1296,7 @@ def ssl_renew(domain: str) -> dict[str, Any]:
 
 def firewall_status() -> dict[str, Any]:
     """Return the UFW firewall status."""
-    if get_platform() != "linux" or not shutil.which("ufw"):
+    if utils.get_platform() != "linux" or not shutil.which("ufw"):
         return {"installed": False, "active": False}
     from atulya_launch.drivers import get_platform_driver
     result = get_platform_driver(dry_run=False).firewall.status()
@@ -1320,7 +1306,7 @@ def firewall_status() -> dict[str, Any]:
 
 def firewall_list_rules() -> list[str]:
     """List numbered UFW rules."""
-    if get_platform() != "linux" or not shutil.which("ufw"):
+    if utils.get_platform() != "linux" or not shutil.which("ufw"):
         return []
     from atulya_launch.drivers import get_platform_driver
     result = get_platform_driver(dry_run=False).firewall.list_rules()
@@ -1333,7 +1319,7 @@ def firewall_list_rules() -> list[str]:
 
 def firewall_enable() -> dict[str, bool]:
     """Enable the UFW firewall."""
-    if get_platform() != "linux":
+    if utils.get_platform() != "linux":
         return {"ok": False, "error": "firewall only supported on Linux"}
     from atulya_launch.drivers import get_platform_driver
     result = get_platform_driver(dry_run=False).firewall.enable()
@@ -1342,7 +1328,7 @@ def firewall_enable() -> dict[str, bool]:
 
 def firewall_disable() -> dict[str, bool]:
     """Disable the UFW firewall."""
-    if get_platform() != "linux":
+    if utils.get_platform() != "linux":
         return {"ok": False, "error": "firewall only supported on Linux"}
     from atulya_launch.drivers import get_platform_driver
     result = get_platform_driver(dry_run=False).firewall.disable()
@@ -1351,7 +1337,7 @@ def firewall_disable() -> dict[str, bool]:
 
 def firewall_allow(port: int, proto: str = "tcp") -> dict[str, bool]:
     """Allow traffic on a port through the firewall."""
-    if get_platform() != "linux":
+    if utils.get_platform() != "linux":
         return {"ok": False, "error": "firewall only supported on Linux"}
     from atulya_launch.drivers import get_platform_driver
     result = get_platform_driver(dry_run=False).firewall.allow(port, proto)
@@ -1360,7 +1346,7 @@ def firewall_allow(port: int, proto: str = "tcp") -> dict[str, bool]:
 
 def firewall_deny(port: int, proto: str = "tcp") -> dict[str, bool]:
     """Deny traffic on a port through the firewall."""
-    if get_platform() != "linux":
+    if utils.get_platform() != "linux":
         return {"ok": False, "error": "firewall only supported on Linux"}
     from atulya_launch.drivers import get_platform_driver
     result = get_platform_driver(dry_run=False).firewall.deny(port, proto)
@@ -1369,7 +1355,7 @@ def firewall_deny(port: int, proto: str = "tcp") -> dict[str, bool]:
 
 def fail2ban_status() -> dict[str, Any]:
     """Return fail2ban installation and jail status."""
-    if get_platform() != "linux":
+    if utils.get_platform() != "linux":
         return {"installed": False, "active": False, "jails": []}
     result: subprocess.CompletedProcess = run_cmd(["fail2ban-client", "status"], check=False)
     if result.returncode != 0:
@@ -1383,7 +1369,7 @@ def fail2ban_status() -> dict[str, Any]:
 
 def fail2ban_restart() -> dict[str, Any]:
     """Restart the fail2ban service."""
-    if get_platform() != "linux":
+    if utils.get_platform() != "linux":
         return {"ok": False, "error": "fail2ban only supported on Linux"}
     from atulya_launch.drivers import get_platform_driver
     result = get_platform_driver(dry_run=False).services.restart("fail2ban")
@@ -1426,9 +1412,8 @@ def app_install(app_name: str, domain: str, db_name: str | None = None, db_user:
     }
     installer = dispatch.get(app_name)
     if installer:
-        result: dict[str, Any] = installer()
-        return result
-    site: dict[str, Any] = site_create(domain)
+        return installer()
+    site_create(domain)
     cfg: dict[str, Any] = load_config()
     cfg.setdefault("installed_apps", {})[app_name] = {
         "domain": domain,
@@ -1720,7 +1705,7 @@ def app_install_nextcloud(domain: str, db_name: str | None = None, db_user: str 
 
 def app_install_laravel(domain: str, php_version: str = "8.3") -> dict[str, Any]:
     """Scaffold a new Laravel project on a domain."""
-    if not is_linux():
+    if not utils.is_linux():
         site_create(domain, php=True, php_version=php_version)
         return {"ok": True, "domain": domain, "note": "Laravel scaffolding requires Linux with composer"}
     site_create(domain, php=True, php_version=php_version)
@@ -1735,7 +1720,7 @@ def app_install_laravel(domain: str, php_version: str = "8.3") -> dict[str, Any]
 
 def app_install_ghost(domain: str) -> dict[str, Any]:
     """Install the Ghost publishing platform on a domain."""
-    if not is_linux():
+    if not utils.is_linux():
         site_create(domain, proxy_pass="http://127.0.0.1:2368")
         return {"ok": True, "domain": domain, "note": "Ghost requires Linux with Node.js"}
     run_cmd(["npm", "install", "-g", "ghost-cli"], timeout=60)
@@ -1773,7 +1758,7 @@ if __name__ == "__main__":
 
 def app_install_django(domain: str, project_name: str = "mysite") -> dict[str, Any]:
     """Scaffold and deploy a Django project on a domain."""
-    if not is_linux():
+    if not utils.is_linux():
         site_create(domain, proxy_pass="http://127.0.0.1:8000")
         return {"ok": True, "domain": domain, "note": "Django requires Linux with Python3"}
     site_create(domain, proxy_pass="http://127.0.0.1:8000")
@@ -1830,7 +1815,6 @@ def deploy_start(app_id: int) -> dict[str, Any]:
         row: Any = cur.execute("SELECT * FROM node_apps WHERE id = ?", (app_id,)).fetchone()
         if not row:
             return {"ok": False, "error": "app not found"}
-        app: dict[str, Any] = dict(row)
     if sys.platform != "linux":
         with connect() as cur:
             cur.execute("UPDATE node_apps SET status = 'running' WHERE id = ?", (app_id,))
@@ -1958,7 +1942,6 @@ def redirect_create(domain: str, source_path: str, target_url: str, redirect_typ
         "type": redirect_type,
         "created_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z",
     }
-    nginx_redirects_key: str = f"redirects_{domain}"
     _rebuild_redirect_nginx(domain, cfg)
     cfg["updated_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
     save_config(cfg)
@@ -2003,7 +1986,7 @@ def _rebuild_redirect_nginx(domain: str, cfg: dict[str, Any]) -> None:
         for r in redirects.values():
             lines.insert(-1, f"    location = {r['source']} {{")
             lines.insert(-1, f"        return {r['type']} {r['target']};")
-            lines.insert(-1, f"    }}")
+            lines.insert(-1, "    }}")
             lines.insert(-1, "")
     config_path.write_text("\n".join(lines), encoding="utf-8")
 
@@ -2012,7 +1995,7 @@ def _rebuild_redirect_nginx(domain: str, cfg: dict[str, Any]) -> None:
 
 def phpmyadmin_install() -> dict[str, Any]:
     """Install and configure phpMyAdmin via apt and nginx."""
-    if not is_linux():
+    if not utils.is_linux():
         return {"ok": False, "error": "only supported on Linux"}
     steps: list[dict[str, Any]] = []
     r1 = run_cmd(["apt-get", "install", "-y", "-qq", "phpmyadmin", "php-mysql", "php-mbstring"])
@@ -2040,7 +2023,7 @@ def phpmyadmin_install() -> dict[str, Any]:
 
 def phpmyadmin_status() -> dict[str, bool]:
     """Check whether phpMyAdmin is installed."""
-    if not is_linux():
+    if not utils.is_linux():
         return {"installed": False}
     r = run_cmd(["dpkg", "-l", "phpmyadmin"])
     return {"installed": r.returncode == 0}
@@ -2055,7 +2038,7 @@ ROUNDCUBE_DIR: Path = Path("/usr/share/roundcube")
 
 def webmail_install() -> dict[str, Any]:
     """Install and configure Roundcube webmail via apt and nginx."""
-    if not is_linux():
+    if not utils.is_linux():
         return {"ok": False, "error": "only supported on Linux"}
     if webmail_status().get("installed"):
         return {"ok": True, "already_installed": True, "url": "http://webmail.YOUR_SERVER_IP"}
@@ -2106,7 +2089,7 @@ def webmail_install() -> dict[str, Any]:
 
 def webmail_status() -> dict[str, bool]:
     """Check whether Roundcube webmail is installed."""
-    if not is_linux():
+    if not utils.is_linux():
         return {"installed": False}
     dir_ok: bool = ROUNDCUBE_DIR.exists() and (ROUNDCUBE_DIR / "index.php").exists()
     nginx_ok: bool = Path("/etc/nginx/sites-available/webmail.conf").exists()
@@ -2115,7 +2098,7 @@ def webmail_status() -> dict[str, bool]:
 
 def roundcube_configure_db() -> dict[str, Any]:
     """Set up a MySQL database and config for Roundcube."""
-    if not is_linux():
+    if not utils.is_linux():
         return {"ok": False, "error": "only supported on Linux"}
     db_pass: str = secrets.token_urlsafe(24)
     r1 = run_cmd(["mysql", "-e", "CREATE DATABASE IF NOT EXISTS `roundcube` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"])
@@ -2264,7 +2247,7 @@ def _rebuild_hotlink_nginx(domain: str, cfg: dict[str, Any]) -> None:
         lines.insert(-1, f"    location ~* \\.({exts})$ {{  # HOTLINK")
         lines.insert(-1, f"        valid_referers {ref_str};")
         lines.insert(-1, f"        if ($invalid_referer) {{ return 403; }}")
-        lines.insert(-1, f"    }}")
+        lines.insert(-1, "    }}")
     config_path.write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -2372,8 +2355,8 @@ def _rebuild_ip_directory_nginx(domain: str, cfg: dict[str, Any]) -> None:
             for ip in rule.get("deny", []):
                 insertions.append(f"        deny {ip};")
             if rule.get("allow") and not rule.get("deny"):
-                insertions.append(f"        deny all;")
-            insertions.append(f"    }}")
+                insertions.append("        deny all;")
+            insertions.append("    }}")
         for line in reversed(insertions):
             lines.insert(-1, line)
     config_path.write_text("\n".join(lines), encoding="utf-8")
@@ -2738,7 +2721,7 @@ def server_list() -> list[dict[str, Any]]:
 
 def server_delete(server_id: int) -> None:
     """Delete a remote server record."""
-    from .web.database import connect, audit_log
+    from .web.database import connect
     with connect() as cur:
         cur.execute("DELETE FROM servers WHERE id = ?", (server_id,))
 
@@ -2822,9 +2805,8 @@ def branding_delete(key: str) -> None:
 
 def mail_setup(domain: str) -> dict[str, Any]:
     """Install Postfix + Dovecot for a domain, create SPF/DKIM/DMARC DNS records."""
-    if not is_linux():
+    if not utils.is_linux():
         return {"ok": False, "error": "mail server setup only supported on Linux"}
-    hostname: str = domain
     steps: list[dict[str, Any]] = []
     pkgs = run_cmd(["apt-get", "install", "-y", "-qq", "postfix", "postfix-mysql", "dovecot-core", "dovecot-imapd", "dovecot-pop3d", "dovecot-mysql", "opendkim", "opendkim-tools"])
     steps.append({"step": "install_packages", "ok": pkgs.returncode == 0})
@@ -2891,7 +2873,7 @@ ssl_key = </etc/ssl/private/ssl-cert-snakeoil.key
 def mail_get_status(domain: str) -> dict[str, Any]:
     """Return the active status of Postfix, Dovecot, and OpenDKIM."""
     result: dict[str, Any] = {"postfix": False, "dovecot": False, "opendkim": False, "dns": []}
-    if is_linux():
+    if utils.is_linux():
         for svc in ["postfix", "dovecot", "opendkim"]:
             r = run_cmd(["systemctl", "is-active", svc])
             result[svc] = r.stdout.strip() == "active"
@@ -2902,7 +2884,7 @@ def mail_create_account(domain: str, mailbox: str, password: str) -> dict[str, A
     """Create a mail account for a domain with Dovecot and database storage."""
     from .web.database import connect
     from .web.auth import hash_password
-    if not is_linux():
+    if not utils.is_linux():
         return {"ok": False, "error": "only supported on Linux"}
     vhost_dir: Path = Path(f"/var/mail/vhosts/{domain}/{mailbox}")
     vhost_dir.mkdir(parents=True, exist_ok=True)

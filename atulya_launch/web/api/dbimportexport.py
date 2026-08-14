@@ -1,7 +1,6 @@
 """Database import / export / scheduled export API."""
 
 import datetime
-from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
 
@@ -152,7 +151,7 @@ def schedule_export(db_name: str, body: ExportSchedule, user: dict = Depends(get
     }
     cron_line = f"{cron_map[body.interval]} {script_path}"
     temp_cron = utils.CONFIG_DIR / "temp_cron"
-    result = utils.run_command(
+    utils.run_command(
         f"crontab -l > {temp_cron} 2>/dev/null; echo '{cron_line}' >> {temp_cron}; crontab {temp_cron}",
         check=False,
     )

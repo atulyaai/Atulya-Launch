@@ -1,7 +1,6 @@
 """Docker container management API."""
 
 import json
-from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 
 from atulya_launch import utils

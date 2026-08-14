@@ -67,9 +67,9 @@ def _generate_redis_conf(config: RedisConfig) -> str:
     lines = [
         f"bind {config.bind}",
         f"port {config.port}",
-        f"daemonize yes",
-        f"pidfile /var/run/redis/redis-server.pid",
-        f"logfile /var/log/redis/redis-server.log",
+        "daemonize yes",
+        "pidfile /var/run/redis/redis-server.pid",
+        "logfile /var/log/redis/redis-server.log",
         f"maxmemory {config.maxmemory}",
         f"maxmemory-policy {config.maxmemory_policy}",
     ]

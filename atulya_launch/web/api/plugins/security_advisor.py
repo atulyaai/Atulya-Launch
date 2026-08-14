@@ -1,14 +1,10 @@
 """Security Advisor - Automated security scanning and scoring."""
 
 import json
-import os
-import subprocess
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends
 
 from atulya_launch import utils
 from atulya_launch.web.auth import get_current_user
@@ -246,7 +242,7 @@ def _check_password_policy() -> SecurityCheck:
     if min_length < 12:
         issues.append(f"Minimum password length is {min_length} (recommended: 12+)")
         check.score_impact -= 5
-    if not require_complexity:
+    if not require_complex:
         issues.append("Password complexity requirements not enforced")
         check.score_impact -= 5
 

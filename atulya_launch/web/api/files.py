@@ -1,16 +1,12 @@
 """File manager API."""
 
-import os
 import shutil
-import stat
 from pathlib import Path
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from atulya_launch import utils
 from atulya_launch.web.auth import get_current_user
 
 router = APIRouter(prefix="/api/files", tags=["files"])

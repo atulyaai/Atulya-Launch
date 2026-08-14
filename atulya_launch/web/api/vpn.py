@@ -1,7 +1,6 @@
 """WireGuard VPN Management API."""
 
 import json
-import re
 import shutil
 import subprocess
 from datetime import datetime
@@ -299,7 +298,6 @@ def get_peer_config(peer_id: str, user: dict = Depends(get_current_user)):
     server_pub = config.get("server_public_key", "")
     port = config.get("port", 51820)
     dns = config.get("dns", "1.1.1.1")
-    server_ip = config.get("server_ip", "10.0.0.1")
 
     public_ip = ""
     result = utils.run_command(["curl", "-s", "ifconfig.me"], check=False)
@@ -335,6 +333,6 @@ def get_server_config(user: dict = Depends(get_current_user)):
             if peer.get("private_key"):
                 safe_content = safe_content.replace(peer["private_key"], "***")
         if config.get("server_public_key"):
-            result = utils.run_command(["wg", "show", WG_INTERFACE, "private-key"], check=False)
+            utils.run_command(["wg", "show", WG_INTERFACE, "private-key"], check=False)
         return {"config": safe_content}
     return {"config": None}

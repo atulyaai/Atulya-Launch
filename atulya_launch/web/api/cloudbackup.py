@@ -1,7 +1,6 @@
 """Cloud Backup API — GCS and Azure Blob Storage integration."""
 
 import json
-import subprocess
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -178,7 +177,6 @@ def set_cloud_config(body: GCSConfig | AzureConfig, user: dict = Depends(get_cur
 @router.post("/push")
 def cloud_push(body: CloudPush, user: dict = Depends(get_current_user)):
     config = _load_cloud_config()
-    from pathlib import Path
     if not Path(body.local_path).exists():
         raise HTTPException(status_code=404, detail="Local path not found")
 

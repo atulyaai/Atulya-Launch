@@ -1,7 +1,6 @@
 """Antivirus Scanner - ClamAV integration for file uploads."""
 
 import json
-import subprocess
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -210,7 +209,7 @@ def scan_directory(body: dict, user: dict = Depends(get_current_user)):
     if not _is_clamav_installed():
         return {"clean": True, "message": "ClamAV not installed", "engine": "none"}
 
-    result = utils.run_command(
+    utils.run_command(
         ["clamscan", "-r", "--infected", "--log", str(AV_DIR / "last_recursive_scan.log"), str(path)],
         check=False,
         timeout=300,

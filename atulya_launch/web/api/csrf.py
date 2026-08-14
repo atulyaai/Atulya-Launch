@@ -3,9 +3,7 @@
 import secrets
 import time
 import json
-from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, HTTPException
 
 from atulya_launch import utils
 from atulya_launch.web.auth import get_current_user

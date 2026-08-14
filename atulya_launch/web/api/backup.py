@@ -1,8 +1,6 @@
 """Backup management API."""
 
-from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 
 from atulya_launch import core
 from atulya_launch.web.auth import get_current_user

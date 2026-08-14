@@ -2,7 +2,6 @@
 
 import json
 import secrets
-from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -56,7 +55,7 @@ def _install_roundcube() -> dict:
     if not utils.is_linux():
         return {"status": "error", "message": "Roundcube installation only supported on Linux"}
 
-    result = utils.run_command(
+    utils.run_command(
         ["apt-get", "install", "-y", "roundcube", "roundcube-pgsql"],
         check=False,
     )

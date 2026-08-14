@@ -1,7 +1,7 @@
 """Cron job management API."""
 
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from atulya_launch import utils

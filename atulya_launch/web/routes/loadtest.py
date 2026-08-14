@@ -5,7 +5,7 @@ from fastapi.templating import Jinja2Templates
 from pathlib import Path
 
 from ... import core
-from ..auth import require_auth, require_admin
+from ..auth import require_admin
 from ..database import audit_log
 
 router: APIRouter = APIRouter(prefix="/loadtest")

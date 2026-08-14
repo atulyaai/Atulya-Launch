@@ -27,7 +27,7 @@ async def servers_page(request: Request) -> HTMLResponse:
 @require_admin
 async def server_create(request: Request, name: str = Form(...), host: str = Form(...), port: int = Form(22), username: str = Form("root"), auth_type: str = Form("password"), auth_data: str = Form("")) -> RedirectResponse:
     """Add a new remote server."""
-    result: dict = core.server_create(name, host, port, username, auth_type, auth_data)
+    core.server_create(name, host, port, username, auth_type, auth_data)
     return RedirectResponse("/servers", status_code=302)
 
 

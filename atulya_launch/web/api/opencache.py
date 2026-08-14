@@ -2,7 +2,6 @@
 
 import json
 import shutil
-from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -141,19 +140,19 @@ apt-get install -y openlitespeed
 
 @router.post("/start")
 def start_litespeed(user: dict = Depends(get_current_user)):
-    result = utils.service_action("start", "lsws")
+    utils.service_action("start", "lsws")
     return {"status": "started"}
 
 
 @router.post("/stop")
 def stop_litespeed(user: dict = Depends(get_current_user)):
-    result = utils.service_action("stop", "lsws")
+    utils.service_action("stop", "lsws")
     return {"status": "stopped"}
 
 
 @router.post("/restart")
 def restart_litespeed(user: dict = Depends(get_current_user)):
-    result = utils.run_command(["lswsctrl", "restart"], check=False)
+    utils.run_command(["lswsctrl", "restart"], check=False)
     return {"status": "restarted"}
 
 

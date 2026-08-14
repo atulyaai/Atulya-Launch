@@ -3,7 +3,6 @@
 import json
 import shutil
 import subprocess
-import tempfile
 import urllib.request
 from datetime import datetime
 from pathlib import Path

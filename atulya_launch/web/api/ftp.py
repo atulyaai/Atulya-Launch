@@ -1,7 +1,5 @@
 """FTP account management API (vsftpd)."""
 
-import os
-import json
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -68,8 +66,6 @@ def create_account(body: FTPAccountCreate, user: dict = Depends(get_current_user
     home = body.home_dir or f"/home/{body.username}"
     if utils.is_linux():
         utils.run_command(["useradd", "-m", "-d", home, "-s", "/usr/sbin/nologin", body.username], check=False)
-        hashed = _hash_password(body.password)
-        utils.run_command(["chpasswd"], check=False)
         import subprocess
         subprocess.run(f"echo '{body.username}:{body.password}' | chpasswd", shell=True, check=False)
     from datetime import datetime

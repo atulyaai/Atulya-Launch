@@ -9,12 +9,11 @@ no driver abstraction adds value.
 from __future__ import annotations
 
 import os
-import subprocess
 from pathlib import Path
 from typing import Any
 
 from .. import utils
-from ..web.database import connect, audit_log
+from ..web.database import audit_log
 
 
 POSTFIX_CONF = Path("/etc/postfix")
@@ -125,7 +124,7 @@ mailbox_size_limit = 0
         (POSTFIX_CONF / "main.cf").write_text(config)
         # Use the service driver for reload (systemd on Linux, launchd on macOS)
         _driver(dry_run=False).services.reload("postfix")
-    audit_event("mail.postfix_config", "ok", {"domain": domain})
+    audit_log("system", "mail.postfix_config", "ok", {"domain": domain})
     return {"ok": True, "domain": domain}
 
 
@@ -194,7 +193,7 @@ service auth {{
         (DOVECOT_CONF / "dovecot.conf").write_text(config)
         utils.run_command(["doveconf", "-n"], check=False)
         _driver(dry_run=False).services.restart("dovecot")
-    audit_event("mail.dovecot_config", "ok", {"domain": domain})
+    audit_log("system", "mail.dovecot_config", "ok", {"domain": domain})
     return {"ok": True, "domain": domain}
 
 
@@ -238,7 +237,7 @@ def add_mailbox(domain: str, mailbox: str, password: str) -> dict[str, Any]:
         driver.services.reload("postfix")
         utils.run_command(["doveconf", "-n"], check=False)
 
-    audit_event("mail.add_mailbox", "ok", {"domain": domain, "mailbox": mailbox})
+    audit_log("system", "mail.add_mailbox", "ok", {"domain": domain, "mailbox": mailbox})
     return {"ok": True, "domain": domain, "mailbox": mailbox}
 
 
@@ -270,7 +269,7 @@ def remove_mailbox(domain: str, mailbox: str) -> dict[str, Any]:
 
         _driver(dry_run=False).services.reload("postfix")
 
-    audit_event("mail.remove_mailbox", "ok", {"domain": domain, "mailbox": mailbox})
+    audit_log("system", "mail.remove_mailbox", "ok", {"domain": domain, "mailbox": mailbox})
     return {"ok": True, "domain": domain, "mailbox": mailbox}
 
 
@@ -314,7 +313,7 @@ def configure_dkim(domain: str, selector: str = "default") -> dict[str, Any]:
     except (OSError, PermissionError):
         pass
 
-    dkim_config = f"""AutoRestart Yes
+    dkim_config = """AutoRestart Yes
 AutoRestartRate 10/1M
 Background Yes
 Canonicalization relaxed/simple
@@ -352,5 +351,5 @@ UserID opendkim:opendkim
     if txt_path.exists():
         txt_record = txt_path.read_text().strip()
 
-    audit_event("mail.dkim_config", "ok", {"domain": domain, "selector": selector})
+    audit_log("system", "mail.dkim_config", "ok", {"domain": domain, "selector": selector})
     return {"ok": True, "domain": domain, "selector": selector, "txt_record": txt_record}

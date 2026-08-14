@@ -41,7 +41,7 @@ def list_zones(user: dict = Depends(get_current_user)):
 def create_zone(body: ZoneCreate, user: dict = Depends(get_current_user)):
     try:
         zone = dns_service.create_zone(body.domain, body.nameservers)
-    except ValueError as exc:
+    except ValueError:
         raise HTTPException(status_code=409, detail="Zone already exists")
     return {"zone": zone, "apply": dns_service.apply_zone(body.domain)}
 

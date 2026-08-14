@@ -1,7 +1,6 @@
 """Server health dashboard — aggregated system health endpoint."""
 
 import datetime
-from pathlib import Path
 from fastapi import APIRouter, Depends
 
 from atulya_launch import utils

@@ -29,14 +29,14 @@ class CatchAllConfig(BaseModel):
 def _generate_postfix_relay(domain: str, config: RoutingConfig) -> str:
     lines = [
         f"relay_domains = {domain}",
-        f"transport_maps = hash:/etc/postfix/transport",
+        "transport_maps = hash:/etc/postfix/transport",
     ]
     if config.relay_host:
         lines.append(f"relayhost = [{config.relay_host}]:{config.relay_port}")
     if config.relay_username:
-        lines.append(f"smtp_sasl_auth_enable = yes")
-        lines.append(f"smtp_sasl_password_maps = hash:/etc/postfix/sasl_passwd")
-        lines.append(f"smtp_sasl_security_options = noanonymous")
+        lines.append("smtp_sasl_auth_enable = yes")
+        lines.append("smtp_sasl_password_maps = hash:/etc/postfix/sasl_passwd")
+        lines.append("smtp_sasl_security_options = noanonymous")
     return "\n".join(lines)
 
 

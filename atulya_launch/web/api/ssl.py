@@ -63,18 +63,7 @@ def install_certificate(body: InstallRequest, user: dict = Depends(get_current_u
         conn.commit()
     finally:
         conn.close()
-    
-    # Apply SSL config via driver layer (for web servers that need certificate paths)
-    try:
-        from atulya_launch.drivers import get_platform_driver
-        driver = get_platform_driver(dry_run=False)
-        # For nginx, we might need to update the site config to point to these certs
-        # This would be site-specific, so we'll just note that certs are installed
-        # The actual SSL configuration in nginx/apache would be handled elsewhere
-        pass
-    except Exception:
-        pass
-    
+
     return {"status": "installed", "domain": body.domain}
 
 

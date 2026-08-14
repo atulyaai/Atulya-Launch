@@ -3,7 +3,6 @@
 import json
 import re
 from datetime import datetime
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import PlainTextResponse
@@ -46,7 +45,6 @@ def _save_zone_json(zone: str, data: dict):
 def _record_to_bind_line(rec: dict) -> str:
     parts = []
     name = rec.get("name", "@")
-    ttl = rec.get("ttl", 3600)
     rtype = rec.get("type", "A")
     priority = rec.get("priority")
     content = rec.get("content", "")
@@ -64,14 +62,14 @@ def _generate_zone_file(zone: str, zone_data: dict) -> str:
     serial = zone_data.get("serial", 1)
 
     lines = [
-        f"$TTL 3600",
+        "$TTL 3600",
         f"@ IN SOA {ns_list[0]}. admin.{zone}. (",
         f"    {serial}        ; serial",
-        f"    3600            ; refresh",
-        f"    900             ; retry",
-        f"    604800          ; expiry",
-        f"    86400           ; minimum",
-        f")",
+        "    3600            ; refresh",
+        "    900             ; retry",
+        "    604800          ; expiry",
+        "    86400           ; minimum",
+        ")",
         "",
     ]
 

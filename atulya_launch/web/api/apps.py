@@ -1,7 +1,6 @@
 """One-click app installer API with real deployment logic."""
 
 import datetime
-import subprocess
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -319,7 +318,6 @@ def uninstall_app(name: str, user: dict = Depends(get_current_user)):
     if name not in installed:
         raise HTTPException(status_code=404, detail="App not installed")
 
-    app = installed[name]
     # Try to stop docker containers if applicable
     app_dir = f"/opt/atulya-launch/apps/{name}"
     utils.run_command(["docker", "compose", "down"], check=False, workdir=app_dir)

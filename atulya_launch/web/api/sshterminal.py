@@ -44,7 +44,6 @@ def _save_sessions(data: dict):
 
 def _has_asyncssh() -> bool:
     try:
-        import asyncssh
         return True
     except ImportError:
         return False

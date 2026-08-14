@@ -1,7 +1,6 @@
 """Cloud DNS Provider Integration API — Cloudflare, Route53, Google DNS."""
 
 import json
-import subprocess
 import uuid
 from datetime import datetime
 from pathlib import Path

@@ -4,7 +4,6 @@ Uses SQLite with WAL mode and provides a context-managed connection,
 schema creation/migration, and an audit log helper.
 """
 
-import os
 import sqlite3
 import json
 from pathlib import Path

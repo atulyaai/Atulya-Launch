@@ -5,8 +5,7 @@ from fastapi.templating import Jinja2Templates
 from pathlib import Path
 
 from ... import core
-from ..auth import require_auth, require_admin
-from ..database import connect
+from ..auth import require_admin
 
 router: APIRouter = APIRouter(prefix="/security")
 templates: Jinja2Templates = Jinja2Templates(directory=str(Path(__file__).parent.parent.parent / "templates"))

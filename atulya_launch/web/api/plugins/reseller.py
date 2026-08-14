@@ -1,9 +1,7 @@
 """Reseller Limits - Quota management and white-label branding."""
 
 import json
-from datetime import datetime
-from pathlib import Path
-from typing import Optional, List
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -129,8 +127,6 @@ def _count_usage(username: str) -> dict:
         email_data = json.loads(email_file.read_text())
 
     db_data = config.get("databases", {})
-    ssl_data = config.get("ssl", {})
-    backup_data = config.get("backups", {})
 
     site_count = sum(1 for s in sites.values() if s.get("owner") == username)
     email_count = sum(1 for addr in email_data.get("accounts", {}) if addr.endswith(f"@{username}"))

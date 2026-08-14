@@ -1,7 +1,6 @@
 """Backup Encryption API — GPG-based backup encryption."""
 
 import json
-import subprocess
 from datetime import datetime
 from typing import Optional
 
@@ -190,11 +189,10 @@ def generate_gpg_key(user: dict = Depends(get_current_user)):
     if not _gpg_available():
         raise HTTPException(status_code=400, detail="GPG is not installed")
 
-    config = _load_encryption_config()
     result = utils.run_command(
         [
             "gpg", "--batch", "--gen-key",
-            f"Key-Type: RSA\nKey-Length: 4096\nName-Real: Atulya-Launch Backup\nName-Email: backup@atulya.local\nExpire-Date: 0\n%no-protection\n%commit",
+            "Key-Type: RSA\nKey-Length: 4096\nName-Real: Atulya-Launch Backup\nName-Email: backup@atulya.local\nExpire-Date: 0\n%no-protection\n%commit",
         ],
         check=False,
     )

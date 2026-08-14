@@ -4,7 +4,6 @@ Provides platform detection, config file management, password generation, servic
 management, and template rendering helpers.
 """
 
-import os
 import sys
 import subprocess
 import secrets

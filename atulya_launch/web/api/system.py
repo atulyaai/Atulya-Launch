@@ -2,11 +2,10 @@
 
 import os
 import platform
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from atulya_launch import core, utils
+from atulya_launch import utils
 from atulya_launch.web.auth import get_current_user
 
 router = APIRouter(prefix="/api/system", tags=["system"])

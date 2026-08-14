@@ -1,7 +1,6 @@
 """Server control API - reboot, shutdown, hostname."""
 
 import platform
-from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 

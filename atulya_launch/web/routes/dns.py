@@ -4,7 +4,6 @@ from fastapi import APIRouter, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
-from typing import Any
 
 from ..auth import require_auth
 from ..database import connect, audit_log

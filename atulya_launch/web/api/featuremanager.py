@@ -171,7 +171,7 @@ def allocate_ip(body: IpAllocate, user: dict = Depends(get_current_user)):
     now = _now()
     try:
         with connect() as conn:
-            cursor = conn.execute(
+            conn.execute(
                 "INSERT INTO ip_allocations (ip, assigned_to, pool, note, created_at) VALUES (?, ?, ?, ?, ?)"
                 "ON CONFLICT(ip) DO UPDATE SET assigned_to = excluded.assigned_to, pool = excluded.pool, note = excluded.note",
                 (body.ip, body.assigned_to, body.pool, body.note, now),

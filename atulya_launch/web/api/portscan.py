@@ -2,7 +2,6 @@
 
 import json
 from datetime import datetime
-from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -132,7 +131,7 @@ def enable_portscan_protection(body: PortscanEnable, user: dict = Depends(get_cu
 
 @router.post("/disable")
 def disable_portscan_protection(user: dict = Depends(get_current_user)):
-    result = _remove_connlimit()
+    _remove_connlimit()
 
     config = _load_portscan_config()
     config["enabled"] = False

@@ -1,7 +1,6 @@
 """SSL certificate details and revocation API."""
 
 import datetime
-import subprocess
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -87,20 +86,6 @@ def _get_fingerprint(cert_path: str, algo: str = "sha256") -> str:
         if "=" in fp:
             return fp.split("=", 1)[1]
     return ""
-
-
-def _get_cert_chain(cert_path: str) -> list:
-    result = utils.run_command(
-        ["openssl", "crl2pkcs7", "-nocrl", "-certfile", cert_path],
-        check=False,
-    )
-    if not result or result.returncode != 0:
-        return []
-    chain_result = utils.run_command(
-        ["openssl", "pkcs7", "-print_certs", "-text", "-in", "/dev/stdin"],
-        check=False,
-    )
-    return []
 
 
 def _get_cert_from_live(domain: str) -> dict:

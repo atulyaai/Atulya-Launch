@@ -179,7 +179,6 @@ def uninstall_phpmyadmin(user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="phpMyAdmin is not installed")
 
     import shutil
-    install_dir = _load_config().get("install_path", PHPMYADMIN_DIR)
     if (PHPMYADMIN_DIR).exists():
         shutil.rmtree(str(PHPMYADMIN_DIR))
     if (PHPMYADMIN_WEB_DIR).exists():

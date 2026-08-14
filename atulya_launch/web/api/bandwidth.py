@@ -1,8 +1,5 @@
 """Bandwidth monitoring API per interface and per domain."""
 
-import json
-import time
-from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 
 from atulya_launch import utils

@@ -1,7 +1,6 @@
 """Database management API."""
 
 import re
-from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -82,11 +81,11 @@ def restore_database(name: str, body: RestoreRequest, user: dict = Depends(get_c
     dbs = core.db_list()
     db_type = dbs.get(name, {}).get("db_type", "mysql")
     if db_type == "mysql":
-        result = utils.run_command(
+        utils.run_command(
             ["mysql", name, "<", body.backup_path], check=False
         )
     elif db_type == "postgresql":
-        result = utils.run_command(
+        utils.run_command(
             ["sudo", "-u", "postgres", "psql", "-d", name, "-f", body.backup_path], check=False
         )
     else:

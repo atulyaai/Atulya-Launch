@@ -3,10 +3,9 @@
 import asyncio
 import json
 import time
-from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 
 from atulya_launch import core
 from atulya_launch.web.auth import get_current_user

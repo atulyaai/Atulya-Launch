@@ -1,6 +1,5 @@
 """Network Stats API — bandwidth, connections, interface monitoring."""
 
-import re
 import time
 from pathlib import Path
 from typing import Optional

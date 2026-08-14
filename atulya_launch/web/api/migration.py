@@ -57,7 +57,6 @@ def _import_cpanel_data(backup_dir: Path) -> dict:
     if mysql_dir.exists():
         for sql_file in mysql_dir.glob("*.sql*"):
             results["databases"].append(sql_file.name)
-            db_name = sql_file.stem.replace(".sql", "")
             import_dir = utils.CONFIG_DIR / "imports"
             import_dir.mkdir(exist_ok=True)
             dest_file = import_dir / sql_file.name

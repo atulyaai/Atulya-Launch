@@ -3,7 +3,7 @@
 import json
 import time
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 
 from atulya_launch import utils
 from atulya_launch.web.auth import get_current_user

@@ -1,7 +1,6 @@
 """Login history API."""
 
 import datetime
-from typing import Optional
 from fastapi import APIRouter, Depends, Query
 
 from atulya_launch.web.auth import get_current_user

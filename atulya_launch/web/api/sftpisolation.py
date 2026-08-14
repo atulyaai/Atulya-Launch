@@ -5,7 +5,6 @@ import os
 import stat
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -59,7 +58,7 @@ def _apply_sshd_config(jail_dir: str, enabled: bool) -> dict:
     if not Path(SSHD_CONFIG).exists():
         return {"error": "sshd_config not found"}
 
-    result = utils.run_command(["cp", SSHD_CONFIG, SSHD_CONFIG + ".bak"], check=False)
+    utils.run_command(["cp", SSHD_CONFIG, SSHD_CONFIG + ".bak"], check=False)
 
     lines = []
     with open(SSHD_CONFIG, "r") as f:
@@ -144,7 +143,7 @@ def set_isolation_config(body: IsolationConfig, user: dict = Depends(get_current
     _save_isolation_config(config)
 
     if body.enabled:
-        jail_setup = _setup_chroot_jail("sftpuser", jail_dir)
+        _setup_chroot_jail("sftpuser", jail_dir)
         sshd_apply = _apply_sshd_config(jail_dir, True)
         if "error" in sshd_apply:
             raise HTTPException(status_code=500, detail=sshd_apply["error"])
@@ -166,7 +165,7 @@ def setup_jail(body: IsolatedUser, user: dict = Depends(get_current_user)):
     user_home = Path(jail_setup["user_home"])
     (user_home / ".ssh").mkdir(parents=True, exist_ok=True)
 
-    result = utils.run_command(
+    utils.run_command(
         ["useradd", "-d", str(user_home), "-s", "/usr/sbin/nologin", "-M", body.username],
         check=False,
     )

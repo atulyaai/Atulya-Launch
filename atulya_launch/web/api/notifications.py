@@ -1,15 +1,12 @@
 """Notification System API with WebSocket push."""
 
 import asyncio
-import json
 import uuid
 from datetime import datetime
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
-from atulya_launch import utils
 from atulya_launch.web.auth import get_current_user
 from atulya_launch.web.database import connect
 

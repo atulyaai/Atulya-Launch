@@ -1,7 +1,5 @@
 """File compression and decompression API."""
 
-import json
-import shutil
 import zipfile
 import tarfile
 from pathlib import Path
@@ -9,7 +7,6 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from atulya_launch import utils
 from atulya_launch.web.auth import get_current_user
 
 router = APIRouter(prefix="/api/files", tags=["files-compress"])

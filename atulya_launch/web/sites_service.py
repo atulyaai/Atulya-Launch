@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -66,7 +66,7 @@ def create_site(domain: str, web_root: str | None = None, proxy_pass: str | None
                 php: bool = False, php_version: str | None = None) -> dict[str, Any]:
     """Create a new site in SQLite."""
     domain = _validate_domain(domain)
-    now = datetime.utcnow().isoformat() + "Z"
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
 
     if web_root:
         root = Path(web_root)
@@ -170,7 +170,7 @@ def set_php_version(domain: str, php_version: str) -> dict[str, Any] | None:
         domain, Path(site["web_root"]), site.get("proxy_pass"), True, php_version
     ))
 
-    now = datetime.utcnow().isoformat() + "Z"
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
     with connect() as conn:
         conn.execute(
             "UPDATE sites SET php = 1, php_version = ?, nginx_config = ?, updated_at = ? WHERE domain = ?",
@@ -202,7 +202,7 @@ def toggle_site(domain: str, enabled: bool) -> dict[str, Any] | None:
     if not site:
         raise ValueError(f"site not found: {domain}")
 
-    now = datetime.utcnow().isoformat() + "Z"
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
     with connect() as conn:
         conn.execute(
             "UPDATE sites SET enabled = ?, updated_at = ? WHERE domain = ?",
@@ -253,8 +253,8 @@ def migrate_config_json_to_sqlite() -> int:
                         site_data.get("php_version"),
                         int(site_data.get("enabled", True)),
                         site_data.get("nginx_config"),
-                        site_data.get("created_at", datetime.utcnow().isoformat() + "Z"),
-                        datetime.utcnow().isoformat() + "Z",
+                        site_data.get("created_at", datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"),
+                        datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z",
                     ),
                 )
             count += 1

@@ -4,7 +4,7 @@ import json
 import subprocess
 import shutil
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -42,7 +42,7 @@ def _save_wildcard_config(data: dict):
         for domain, cert_data in data.items():
             conn.execute(
                 "INSERT OR REPLACE INTO ssl_wildcard (domain, data, updated_at) VALUES (?, ?, ?)",
-                (domain, json.dumps(cert_data), datetime.utcnow().isoformat() + "Z"),
+                (domain, json.dumps(cert_data), datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"),
             )
         conn.commit()
 

@@ -12,7 +12,7 @@ import importlib
 import pkgutil
 from urllib.parse import parse_qs
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from collections import defaultdict
 from typing import Any
 
@@ -308,7 +308,7 @@ def create_app() -> FastAPI:
             return RedirectResponse("/dashboard", status_code=302)
         error: str | None = request.query_params.get("error")
         try:
-            now: str = datetime.utcnow().isoformat() + "Z"
+            now: str = datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
             with __import__("contextlib").nullcontext():
                 from .database import connect
                 with connect() as cur:

@@ -8,7 +8,7 @@ import os
 import sqlite3
 import json
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from contextlib import contextmanager
 from typing import Any, Iterator
 
@@ -444,6 +444,64 @@ SCHEMA: str = """
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS dnssec_zones (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        domain TEXT UNIQUE NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 0,
+        algorithm TEXT,
+        key_tag INTEGER,
+        key_type TEXT,
+        digest_type INTEGER,
+        digest TEXT,
+        nsec3 INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        updated_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS addon_domains (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        domain TEXT UNIQUE NOT NULL,
+        root_domain TEXT NOT NULL,
+        document_root TEXT NOT NULL,
+        created_by TEXT,
+        created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS site_publisher (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        domain TEXT UNIQUE NOT NULL,
+        template TEXT NOT NULL,
+        title TEXT NOT NULL DEFAULT '',
+        content TEXT DEFAULT '',
+        published INTEGER NOT NULL DEFAULT 0,
+        created_by TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS email_auth_records (
+        domain TEXT PRIMARY KEY,
+        spf TEXT,
+        dmarc TEXT,
+        dkim_selector TEXT DEFAULT 'default',
+        dkim_policy TEXT DEFAULT 'relaxed',
+        updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS feature_groups (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT DEFAULT '',
+        features TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS ip_allocations (
+        ip TEXT PRIMARY KEY,
+        assigned_to TEXT,
+        pool TEXT DEFAULT 'default',
+        note TEXT DEFAULT '',
+        created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS ai_metric_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        collected_at TEXT NOT NULL,
+        metrics_json TEXT NOT NULL
+    );
 """
 
 
@@ -791,7 +849,7 @@ def _init_schema() -> None:
                     pass
             conn.execute(
                 "INSERT OR REPLACE INTO schema_version (version, applied_at) VALUES (?, ?)",
-                (SCHEMA_VERSION, datetime.utcnow().isoformat() + "Z"),
+                (SCHEMA_VERSION, datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"),
             )
     finally:
         conn.close()
@@ -833,7 +891,7 @@ def audit_log(user: str, action: str, status: str, details: dict | None = None) 
         try:
             conn.execute(
                 "INSERT INTO audit_log (time, user, action, status, details) VALUES (?, ?, ?, ?, ?)",
-                (datetime.utcnow().isoformat() + "Z", user, action, status, json.dumps(details or {})),
+                (datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z", user, action, status, json.dumps(details or {})),
             )
             conn.commit()
         finally:

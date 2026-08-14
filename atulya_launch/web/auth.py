@@ -9,7 +9,7 @@ import hashlib
 import base64
 import secrets
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from collections import defaultdict
 from typing import Any, Callable
@@ -96,7 +96,7 @@ def create_user(username: str, password: str, role: str = "admin", skip_policy: 
         try:
             cur.execute(
                 "INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)",
-                (username, pw_hash, role, datetime.utcnow().isoformat() + "Z"),
+                (username, pw_hash, role, datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"),
             )
         except Exception as e:
             if "UNIQUE" in str(e):
@@ -105,50 +105,15 @@ def create_user(username: str, password: str, role: str = "admin", skip_policy: 
 
 
 def _is_2fa_enabled(username: str) -> bool:
-    """Check if 2FA is enabled for a user via the twofa.json config file."""
-    try:
-        from .. import utils
-        config_file = utils.CONFIG_DIR / "twofa.json"
-        if not config_file.exists():
-            return False
-        import json
-        with open(config_file) as f:
-            config = json.load(f) or {}
-        user_2fa = config.get(username, {})
-        return user_2fa.get("enabled", False)
-    except Exception:
-        return False
+    """Check if 2FA is enabled for a user via the unified SQLite store."""
+    from .twofa_store import is_enabled
+    return is_enabled(username)
 
 
 def _verify_totp(username: str, code: str) -> bool:
-    """Verify a TOTP code against the user's stored secret."""
-    try:
-        from .. import utils
-        import json
-        import hmac as hmac_mod
-        import struct
-        config_file = utils.CONFIG_DIR / "twofa.json"
-        if not config_file.exists():
-            return False
-        with open(config_file) as f:
-            config = json.load(f) or {}
-        user_2fa = config.get(username, {})
-        secret = user_2fa.get("secret", "")
-        if not secret:
-            return False
-        for offset in (-1, 0, 1):
-            key = bytes.fromhex(secret)
-            counter = (int(time.time()) // 30) + offset
-            counter_bytes = struct.pack(">Q", counter)
-            h = hmac_mod.new(key, counter_bytes, hashlib.sha1).digest()
-            idx = h[-1] & 0x0F
-            expected = struct.unpack(">I", h[idx:idx+4])[0] & 0x7FFFFFFF
-            expected_code = str(expected % 1000000).zfill(6)
-            if hmac_mod.compare_digest(code, expected_code):
-                return True
-        return False
-    except Exception:
-        return False
+    """Verify a TOTP or backup code for a user via the unified SQLite store."""
+    from .twofa_store import verify
+    return verify(username, code)
 
 
 def authenticate(username: str, password: str) -> dict | None:
@@ -180,18 +145,18 @@ def authenticate(username: str, password: str) -> dict | None:
         max_sessions: int = int(os.environ.get("PANEL_MAX_SESSIONS", "5"))
         sessions: list[Any] = cur.execute(
             "SELECT token FROM sessions WHERE user_id = ? AND expires_at > ? ORDER BY created_at ASC",
-            (row["id"], datetime.utcnow().isoformat() + "Z"),
+            (row["id"], datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"),
         ).fetchall()
         if len(sessions) >= max_sessions:
             cur.execute("DELETE FROM sessions WHERE token = ?", (sessions[0]["token"],))
 
         token: str = secrets.token_urlsafe(32)
-        expires: str = (datetime.utcnow() + timedelta(hours=24)).isoformat() + "Z"
+        expires: str = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=24)).isoformat() + "Z"
         cur.execute(
             "INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
-            (token, row["id"], datetime.utcnow().isoformat() + "Z", expires),
+            (token, row["id"], datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z", expires),
         )
-        cur.execute("UPDATE users SET last_login = ? WHERE id = ?", (datetime.utcnow().isoformat() + "Z", row["id"]))
+        cur.execute("UPDATE users SET last_login = ? WHERE id = ?", (datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z", row["id"]))
         user_data: dict = dict(row)
 
         must_change = bool(row.get("must_change_password", 0)) if isinstance(row, dict) else False
@@ -217,17 +182,17 @@ def complete_2fa_login(username: str) -> dict | None:
         max_sessions: int = int(os.environ.get("PANEL_MAX_SESSIONS", "5"))
         sessions: list[Any] = cur.execute(
             "SELECT token FROM sessions WHERE user_id = ? AND expires_at > ? ORDER BY created_at ASC",
-            (row["id"], datetime.utcnow().isoformat() + "Z"),
+            (row["id"], datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"),
         ).fetchall()
         if len(sessions) >= max_sessions:
             cur.execute("DELETE FROM sessions WHERE token = ?", (sessions[0]["token"],))
         token: str = secrets.token_urlsafe(32)
-        expires: str = (datetime.utcnow() + timedelta(hours=24)).isoformat() + "Z"
+        expires: str = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=24)).isoformat() + "Z"
         cur.execute(
             "INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
-            (token, row["id"], datetime.utcnow().isoformat() + "Z", expires),
+            (token, row["id"], datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z", expires),
         )
-        cur.execute("UPDATE users SET last_login = ? WHERE id = ?", (datetime.utcnow().isoformat() + "Z", row["id"]))
+        cur.execute("UPDATE users SET last_login = ? WHERE id = ?", (datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z", row["id"]))
         user_data: dict = dict(row)
     audit_log(username, "auth.login.2fa_ok", "ok")
     return {"token": token, "user": user_data, "expires": expires}
@@ -240,7 +205,7 @@ def validate_session(token: str | None) -> dict | None:
     with connect() as cur:
         row: Any = cur.execute(
             "SELECT s.*, u.username, u.role FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.token = ? AND s.expires_at > ?",
-            (token, datetime.utcnow().isoformat() + "Z"),
+            (token, datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"),
         ).fetchone()
         if row:
             return dict(row)

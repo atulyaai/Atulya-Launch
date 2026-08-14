@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import shutil
 import zipfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -32,7 +32,7 @@ def create_backup(name: str | None = None) -> dict[str, Any]:
     """Create a backup and store metadata in SQLite."""
     from .. import core
     core.ensure_dirs()
-    stamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    stamp = datetime.now(timezone.utc).replace(tzinfo=None).strftime("%Y%m%d_%H%M%S")
     backup_name = name or f"backup-{stamp}"
     archive_path = core.BACKUPS_DIR / f"{backup_name}.zip"
 
@@ -45,7 +45,7 @@ def create_backup(name: str | None = None) -> dict[str, Any]:
                     if item.is_file():
                         archive.write(item, item.relative_to(core.CONFIG_DIR))
 
-    now = datetime.utcnow().isoformat() + "Z"
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
     with connect() as conn:
         conn.execute(
             "INSERT OR REPLACE INTO backups (name, path, size, created_at) VALUES (?, ?, ?, ?)",
@@ -88,7 +88,7 @@ def restore_backup(name: str) -> dict[str, Any]:
         raise ValueError(f"backup archive missing: {archive_path}")
 
     from .. import core
-    restore_dir = core.CACHE_DIR / f"restore-{name}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+    restore_dir = core.CACHE_DIR / f"restore-{name}-{datetime.now(timezone.utc).replace(tzinfo=None).strftime('%Y%m%d%H%M%S')}"
     restore_dir.mkdir(parents=True, exist_ok=True)
 
     with zipfile.ZipFile(archive_path, "r") as archive:

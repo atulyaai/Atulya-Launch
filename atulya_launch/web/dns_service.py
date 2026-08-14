@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from atulya_launch.drivers import BindZone, get_platform_driver
@@ -19,7 +19,7 @@ def _driver_dry_run() -> bool:
 
 
 def _serial() -> int:
-    return int(datetime.utcnow().strftime("%Y%m%d%H"))
+    return int(datetime.now(timezone.utc).replace(tzinfo=None).strftime("%Y%m%d%H"))
 
 
 def list_zones() -> dict[str, dict[str, Any]]:
@@ -56,7 +56,7 @@ def create_zone(domain: str, nameservers: list[str] | None = None) -> dict[str, 
             raise ValueError("Zone already exists")
         conn.execute(
             "INSERT INTO dns_zones (domain, soa_primary, soa_email, created_at) VALUES (?, ?, ?, ?)",
-            (domain, ns[0], f"admin.{domain}", datetime.utcnow().isoformat() + "Z"),
+            (domain, ns[0], f"admin.{domain}", datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"),
         )
     return get_zone(domain)
 
@@ -92,7 +92,7 @@ def add_record(domain: str, record_type: str, name: str, value: str, ttl: int = 
             raise KeyError("Zone not found")
         cursor = conn.execute(
             "INSERT INTO dns_records (zone_id, name, type, value, ttl, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (zone["id"], name, record_type, value, ttl, datetime.utcnow().isoformat() + "Z"),
+            (zone["id"], name, record_type, value, ttl, datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"),
         )
         record_id = cursor.lastrowid
     return get_record(domain, int(record_id))

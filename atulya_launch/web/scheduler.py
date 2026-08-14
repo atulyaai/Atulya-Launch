@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from ..web.database import connect, audit_log
@@ -138,11 +138,11 @@ def _job_backup_cleanup():
 def _job_session_cleanup():
     """Background job: remove expired sessions."""
     try:
-        from datetime import datetime
+        from datetime import datetime, timezone
         with connect() as conn:
             cursor = conn.execute(
                 "DELETE FROM sessions WHERE expires_at < ?",
-                (datetime.utcnow().isoformat() + "Z",)
+                (datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z",)
             )
             removed = cursor.rowcount
             conn.commit()

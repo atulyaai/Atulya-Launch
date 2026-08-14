@@ -11,6 +11,8 @@ router = APIRouter(prefix="/api/health", tags=["health"])
 
 
 def _check_service(name: str) -> dict:
+    if not utils.is_linux():
+        return {"name": name, "active": False, "status": "unknown"}
     result = utils.run_command(["systemctl", "is-active", name], check=False)
     active = result is not None and result.returncode == 0 and "active" in (result.stdout or "")
     return {"name": name, "active": active, "status": "running" if active else "stopped"}
@@ -34,6 +36,8 @@ def _get_uptime() -> dict:
 def _get_load_average() -> dict:
     try:
         import os
+        if not hasattr(os, "getloadavg"):
+            raise OSError("load average not supported on this platform")
         load1, load5, load15 = os.getloadavg()
         return {"load_1m": round(load1, 2), "load_5m": round(load5, 2), "load_15m": round(load15, 2)}
     except (OSError, ImportError):

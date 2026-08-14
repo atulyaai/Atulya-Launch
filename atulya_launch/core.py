@@ -16,7 +16,7 @@ import hmac
 import base64
 from pathlib import Path
 from importlib import metadata
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import requests
@@ -147,7 +147,7 @@ def panel_init(admin_user: str = "admin", admin_password: str | None = None, rot
     cfg: dict[str, Any] = load_config()
     panel: dict[str, Any] = cfg.setdefault("panel", {})
     if not panel.get("created_at"):
-        panel["created_at"] = datetime.utcnow().isoformat() + "Z"
+        panel["created_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
     panel["admin_user"] = admin_user
     generated_password: str | None = None
     if admin_password:
@@ -234,7 +234,7 @@ def audit_event(action: str, status: str, details: dict[str, Any] | None = None)
     """Record an audit event to the JSONL audit log."""
     ensure_dirs()
     event: dict[str, Any] = {
-        "time": datetime.utcnow().isoformat() + "Z",
+        "time": datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z",
         "action": action,
         "status": status,
         "details": details or {},
@@ -344,11 +344,11 @@ def site_create(domain: str, web_root: str | None = None, proxy_pass: str | None
         "php": bool(php),
         "php_version": php_version,
         "enabled": True,
-        "created_at": datetime.utcnow().isoformat() + "Z",
+        "created_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z",
         "nginx_config": str(generate_nginx_config(domain, root, proxy_pass, php, php_version)),
     }
     cfg["sites"][domain] = site
-    cfg["updated_at"] = datetime.utcnow().isoformat() + "Z"
+    cfg["updated_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
     save_config(cfg)
     audit_event("site.create", "ok", {"domain": domain})
     
@@ -387,7 +387,7 @@ def site_set_php_version(domain: str, php_version: str) -> dict[str, Any]:
     site["php"] = True
     site["php_version"] = php_version
     site["nginx_config"] = str(generate_nginx_config(domain, Path(site["web_root"]), site.get("proxy_pass"), True, php_version))
-    cfg["updated_at"] = datetime.utcnow().isoformat() + "Z"
+    cfg["updated_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
     save_config(cfg)
     audit_event("site.php_version", "ok", {"domain": domain, "php_version": php_version})
     
@@ -467,7 +467,7 @@ def site_delete(domain: str) -> bool:
     config_path: Path = Path(site.get("nginx_config", ""))
     if config_path.exists() and _is_within_directory(NGINX_DIR, config_path):
         config_path.unlink()
-    cfg["updated_at"] = datetime.utcnow().isoformat() + "Z"
+    cfg["updated_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
     save_config(cfg)
     audit_event("site.delete", "ok", {"domain": domain})
     
@@ -629,13 +629,13 @@ def security_scan() -> dict[str, Any]:
         except ValueError:
             issues.append({"level": "critical", "check": "site_root", "message": f"{domain} web root escapes config dir."})
     score: int = max(0, 100 - (20 * len([i for i in issues if i["level"] == "critical"])) - (10 * len([i for i in issues if i["level"] == "high"])))
-    return {"score": score, "issues": issues, "checked_at": datetime.utcnow().isoformat() + "Z"}
+    return {"score": score, "issues": issues, "checked_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"}
 
 
 def backup_create(name: str | None = None) -> dict[str, Any]:
     """Create a ZIP archive backup of config and webroots."""
     ensure_dirs()
-    stamp: str = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    stamp: str = datetime.now(timezone.utc).replace(tzinfo=None).strftime("%Y%m%d_%H%M%S")
     backup_name: str = name or f"backup-{stamp}"
     archive_path: Path = BACKUPS_DIR / f"{backup_name}.zip"
     with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
@@ -651,7 +651,7 @@ def backup_create(name: str | None = None) -> dict[str, Any]:
         "name": backup_name,
         "path": str(archive_path),
         "size": archive_path.stat().st_size,
-        "created_at": datetime.utcnow().isoformat() + "Z",
+        "created_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z",
     }
     save_config(cfg)
     audit_event("backup.create", "ok", {"name": backup_name, "path": str(archive_path)})
@@ -672,7 +672,7 @@ def backup_restore(name: str) -> dict[str, str]:
     archive_path: Path = Path(backup["path"])
     if not archive_path.exists():
         raise ValueError(f"backup archive missing: {archive_path}")
-    restore_dir: Path = CACHE_DIR / f"restore-{name}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+    restore_dir: Path = CACHE_DIR / f"restore-{name}-{datetime.now(timezone.utc).replace(tzinfo=None).strftime('%Y%m%d%H%M%S')}"
     restore_dir.mkdir(parents=True, exist_ok=True)
     extract_archive(archive_path, restore_dir)
     restored_config: Path = restore_dir / "config.json"
@@ -1190,7 +1190,7 @@ def database_drop(name: str, db_type: str = "mysql") -> dict[str, Any]:
 def database_backup(name: str, db_type: str = "mysql") -> dict[str, Any]:
     """Dump a database to a gzipped SQL file."""
     ensure_dirs()
-    stamp: str = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    stamp: str = datetime.now(timezone.utc).replace(tzinfo=None).strftime("%Y%m%d_%H%M%S")
     backup_path: Path = BACKUPS_DIR / f"db-{name}-{stamp}.sql.gz"
     import gzip
     if db_type in ("mysql", "mariadb"):
@@ -1432,7 +1432,7 @@ def app_install(app_name: str, domain: str, db_name: str | None = None, db_user:
     cfg: dict[str, Any] = load_config()
     cfg.setdefault("installed_apps", {})[app_name] = {
         "domain": domain,
-        "installed_at": datetime.utcnow().isoformat() + "Z",
+        "installed_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z",
     }
     save_config(cfg)
     audit_event("app.install", "ok", {"app": app_name, "domain": domain})
@@ -1519,11 +1519,11 @@ def migration_delete(migration_id: int) -> None:
 def plan_create(name: str, sites_limit: int = 0, disk_limit_mb: int = 0, db_limit: int = 0, email_limit: int = 0, bandwidth_limit_mb: int = 0, price_monthly: int = 0) -> dict[str, Any]:
     """Create a reseller hosting plan."""
     from .web.database import connect, audit_log
-    from datetime import datetime
+    from datetime import datetime, timezone
     with connect() as cur:
         cur.execute(
             "INSERT INTO plans (name, sites_limit, disk_limit_mb, db_limit, email_limit, bandwidth_limit_mb, price_monthly, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (name, sites_limit, disk_limit_mb, db_limit, email_limit, bandwidth_limit_mb, price_monthly, datetime.utcnow().isoformat() + "Z"),
+            (name, sites_limit, disk_limit_mb, db_limit, email_limit, bandwidth_limit_mb, price_monthly, datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"),
         )
     audit_log("system", "plan.create", "ok", {"name": name})
     return {"ok": True, "name": name}
@@ -1559,12 +1559,12 @@ def plan_delete(plan_id: int) -> None:
 def plan_assign(user_id: int, plan_id: int, expires_at: str | None = None) -> None:
     """Assign a plan to a user."""
     from .web.database import connect, audit_log
-    from datetime import datetime
+    from datetime import datetime, timezone
     with connect() as cur:
         cur.execute("DELETE FROM user_plans WHERE user_id = ?", (user_id,))
         cur.execute(
             "INSERT INTO user_plans (user_id, plan_id, assigned_at, expires_at) VALUES (?, ?, ?, ?)",
-            (user_id, plan_id, datetime.utcnow().isoformat() + "Z", expires_at),
+            (user_id, plan_id, datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z", expires_at),
         )
     audit_log("system", "plan.assign", "ok", {"user_id": user_id, "plan_id": plan_id})
 
@@ -1625,7 +1625,7 @@ def wordpress_install(domain: str, db_name: str | None = None, db_user: str | No
     except Exception as e:
         cfg.setdefault("installed_apps", {})["wordpress_" + domain] = {
             "domain": domain,
-            "installed_at": datetime.utcnow().isoformat() + "Z",
+            "installed_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z",
             "downloaded": False,
             "error": str(e),
         }
@@ -1671,7 +1671,7 @@ def wordpress_install(domain: str, db_name: str | None = None, db_user: str | No
 
     cfg.setdefault("installed_apps", {})["wordpress_" + domain] = {
         "domain": domain,
-        "installed_at": datetime.utcnow().isoformat() + "Z",
+        "installed_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z",
     }
     save_config(cfg)
 
@@ -1712,7 +1712,7 @@ def app_install_nextcloud(domain: str, db_name: str | None = None, db_user: str 
     if db_name:
         db_result: dict[str, Any] = database_create(db_name, "mysql")
         result["db_create"] = db_result.get("ok", False)
-    cfg.setdefault("installed_apps", {})["nextcloud_" + domain] = {"domain": domain, "installed_at": datetime.utcnow().isoformat() + "Z"}
+    cfg.setdefault("installed_apps", {})["nextcloud_" + domain] = {"domain": domain, "installed_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"}
     save_config(cfg)
     audit_event("app.install", "ok", {"app": "nextcloud", "domain": domain})
     return result
@@ -1793,12 +1793,12 @@ def app_install_django(domain: str, project_name: str = "mysite") -> dict[str, A
 def deploy_app(name: str, domain: str, app_type: str = "node", entry_point: str = "index.js", port: int = 3000) -> dict[str, Any]:
     """Register a new application deployment for a domain."""
     from .web.database import connect, audit_log
-    from datetime import datetime
+    from datetime import datetime, timezone
     site_create(domain, proxy_pass=f"http://127.0.0.1:{port}", php=False)
     with connect() as cur:
         cur.execute(
             "INSERT INTO node_apps (name, domain, app_type, entry_point, port, status, created_at) VALUES (?, ?, ?, ?, ?, 'stopped', ?)",
-            (name, domain, app_type, entry_point, port, datetime.utcnow().isoformat() + "Z"),
+            (name, domain, app_type, entry_point, port, datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"),
         )
     audit_log("system", "deploy.create", "ok", {"name": name, "domain": domain, "type": app_type})
     return {"ok": True, "name": name, "domain": domain, "port": port}
@@ -1867,10 +1867,10 @@ def subdomain_create(domain: str, subdomain: str, target: str | None = None) -> 
         "web_root": str(web_root),
         "target": target,
         "php": False,
-        "created_at": datetime.utcnow().isoformat() + "Z",
+        "created_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z",
         "nginx_config": str(nginx_path),
     }
-    cfg["updated_at"] = datetime.utcnow().isoformat() + "Z"
+    cfg["updated_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
     save_config(cfg)
     return {"ok": True, "full": full, "web_root": str(web_root)}
 
@@ -1895,7 +1895,7 @@ def subdomain_delete(domain: str, subdomain: str) -> dict[str, Any]:
     if config_path.exists():
         config_path.unlink()
     shutil.rmtree(Path(sub["web_root"]).parent, ignore_errors=True)
-    cfg["updated_at"] = datetime.utcnow().isoformat() + "Z"
+    cfg["updated_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
     save_config(cfg)
     return {"ok": True}
 
@@ -1915,9 +1915,9 @@ def parked_domain_create(primary_domain: str, parked_domain: str) -> dict[str, A
         return {"ok": False, "error": f"already parked: {parked_domain}"}
     parkings[parked_domain] = {
         "primary": primary_domain,
-        "created_at": datetime.utcnow().isoformat() + "Z",
+        "created_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z",
     }
-    cfg["updated_at"] = datetime.utcnow().isoformat() + "Z"
+    cfg["updated_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
     save_config(cfg)
     return {"ok": True, "parked": parked_domain, "points_to": primary_domain}
 
@@ -1934,7 +1934,7 @@ def parked_domain_delete(parked_domain: str) -> dict[str, Any]:
     if parked_domain not in parkings:
         return {"ok": False, "error": "parked domain not found"}
     del parkings[parked_domain]
-    cfg["updated_at"] = datetime.utcnow().isoformat() + "Z"
+    cfg["updated_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
     save_config(cfg)
     return {"ok": True}
 
@@ -1956,11 +1956,11 @@ def redirect_create(domain: str, source_path: str, target_url: str, redirect_typ
         "source": source_path,
         "target": target_url,
         "type": redirect_type,
-        "created_at": datetime.utcnow().isoformat() + "Z",
+        "created_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z",
     }
     nginx_redirects_key: str = f"redirects_{domain}"
     _rebuild_redirect_nginx(domain, cfg)
-    cfg["updated_at"] = datetime.utcnow().isoformat() + "Z"
+    cfg["updated_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
     save_config(cfg)
     return {"ok": True, "key": key}
 
@@ -1982,7 +1982,7 @@ def redirect_delete(domain: str, source_path: str) -> dict[str, Any]:
         return {"ok": False, "error": "redirect not found"}
     del cfg["redirects"][key]
     _rebuild_redirect_nginx(domain, cfg)
-    cfg["updated_at"] = datetime.utcnow().isoformat() + "Z"
+    cfg["updated_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
     save_config(cfg)
     return {"ok": True}
 
@@ -2156,7 +2156,7 @@ def ip_deny_add(domain: str, ip_address: str) -> dict[str, Any]:
         return {"ok": False, "error": "IP already denied"}
     domain_deny.append(ip_address)
     _rebuild_ip_deny_nginx(domain, cfg)
-    cfg["updated_at"] = datetime.utcnow().isoformat() + "Z"
+    cfg["updated_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
     save_config(cfg)
     return {"ok": True}
 
@@ -2179,7 +2179,7 @@ def ip_deny_remove(domain: str, ip_address: str) -> dict[str, Any]:
         return {"ok": False, "error": "IP not found"}
     domain_deny.remove(ip_address)
     _rebuild_ip_deny_nginx(domain, cfg)
-    cfg["updated_at"] = datetime.utcnow().isoformat() + "Z"
+    cfg["updated_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
     save_config(cfg)
     return {"ok": True}
 
@@ -2227,7 +2227,7 @@ def hotlink_protection_set(domain: str, enabled: bool, extensions: list[str] | N
     else:
         hotlink_cfg.pop(domain, None)
     _rebuild_hotlink_nginx(domain, cfg)
-    cfg["updated_at"] = datetime.utcnow().isoformat() + "Z"
+    cfg["updated_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
     save_config(cfg)
     audit_event("hotlink.set", "ok", {"domain": domain, "enabled": enabled})
     return {"ok": True}
@@ -2284,13 +2284,13 @@ def ip_directory_allow_add(domain: str, directory: str, ip_address: str) -> dict
             if ip_address in rule["deny"]:
                 rule["deny"].remove(ip_address)
             _rebuild_ip_directory_nginx(domain, cfg)
-            cfg["updated_at"] = datetime.utcnow().isoformat() + "Z"
+            cfg["updated_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
             save_config(cfg)
             audit_event("ip_directory.allow", "ok", {"domain": domain, "directory": directory, "ip": ip_address})
             return {"ok": True}
     domain_rules.append({"directory": directory, "allow": [ip_address], "deny": []})
     _rebuild_ip_directory_nginx(domain, cfg)
-    cfg["updated_at"] = datetime.utcnow().isoformat() + "Z"
+    cfg["updated_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
     save_config(cfg)
     audit_event("ip_directory.allow", "ok", {"domain": domain, "directory": directory, "ip": ip_address})
     return {"ok": True}
@@ -2309,13 +2309,13 @@ def ip_directory_deny_add(domain: str, directory: str, ip_address: str) -> dict[
             if ip_address in rule["allow"]:
                 rule["allow"].remove(ip_address)
             _rebuild_ip_directory_nginx(domain, cfg)
-            cfg["updated_at"] = datetime.utcnow().isoformat() + "Z"
+            cfg["updated_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
             save_config(cfg)
             audit_event("ip_directory.deny", "ok", {"domain": domain, "directory": directory, "ip": ip_address})
             return {"ok": True}
     domain_rules.append({"directory": directory, "allow": [], "deny": [ip_address]})
     _rebuild_ip_directory_nginx(domain, cfg)
-    cfg["updated_at"] = datetime.utcnow().isoformat() + "Z"
+    cfg["updated_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
     save_config(cfg)
     audit_event("ip_directory.deny", "ok", {"domain": domain, "directory": directory, "ip": ip_address})
     return {"ok": True}
@@ -2336,7 +2336,7 @@ def ip_directory_remove(domain: str, directory: str, ip_address: str) -> dict[st
     if not cfg["ip_directory_access"][domain]:
         del cfg["ip_directory_access"][domain]
     _rebuild_ip_directory_nginx(domain, cfg)
-    cfg["updated_at"] = datetime.utcnow().isoformat() + "Z"
+    cfg["updated_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
     save_config(cfg)
     audit_event("ip_directory.remove", "ok", {"domain": domain, "directory": directory, "ip": ip_address})
     return {"ok": True}
@@ -2398,7 +2398,7 @@ def rebuild_all_nginx() -> dict[str, bool]:
         _rebuild_ip_deny_nginx(domain, cfg)
         _rebuild_hotlink_nginx(domain, cfg)
         _rebuild_ip_directory_nginx(domain, cfg)
-    cfg["updated_at"] = datetime.utcnow().isoformat() + "Z"
+    cfg["updated_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
     save_config(cfg)
     audit_event("nginx.rebuild_all", "ok", {"domains": list(cfg.get("sites", {}))})
     return {"ok": True}
@@ -2411,19 +2411,19 @@ def api_token_create(name: str, permissions: list[str] | None = None, expires_da
     cfg: dict[str, Any] = load_config()
     tokens: dict[str, Any] = cfg.setdefault("api_tokens", {})
     token: str = secrets.token_hex(32)
-    expires_at: str | None = (datetime.utcnow().isoformat() + "Z") if not expires_days else None
+    expires_at: str | None = (datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z") if not expires_days else None
     if expires_days:
         from datetime import timedelta
-        expires_at = (datetime.utcnow() + timedelta(days=expires_days)).isoformat() + "Z"
+        expires_at = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=expires_days)).isoformat() + "Z"
     tokens[token[:16]] = {
         "name": name,
         "token": token,
         "permissions": permissions or ["read"],
-        "created_at": datetime.utcnow().isoformat() + "Z",
+        "created_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z",
         "expires_at": expires_at,
         "last_used": None,
     }
-    cfg["updated_at"] = datetime.utcnow().isoformat() + "Z"
+    cfg["updated_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
     save_config(cfg)
     return {"ok": True, "name": name, "token": token, "id": token[:16]}
 
@@ -2445,7 +2445,7 @@ def api_token_delete(token_id: str) -> dict[str, Any]:
     if token_id not in tokens:
         return {"ok": False, "error": "token not found"}
     del tokens[token_id]
-    cfg["updated_at"] = datetime.utcnow().isoformat() + "Z"
+    cfg["updated_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
     save_config(cfg)
     return {"ok": True}
 
@@ -2459,94 +2459,46 @@ def api_token_validate(raw_token: str) -> dict[str, Any] | None:
     for tid, t in tokens.items():
         if hmac.compare_digest(t["token"], raw_token):
             expires: str | None = t.get("expires_at")
-            if expires and expires < datetime.utcnow().isoformat() + "Z":
+            if expires and expires < datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z":
                 return None
-            t["last_used"] = datetime.utcnow().isoformat() + "Z"
+            t["last_used"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
             save_config(cfg)
             return {"id": tid, "name": t["name"], "permissions": t.get("permissions", [])}
     return None
 
 
 # ─── v1.0.0+: Two-Factor Authentication (TOTP) ──────────────────────────
+# All 2FA state lives in the unified SQLite store (atulya_launch.web.twofa_store)
+# so the login challenge, settings page, and API all agree.
 
 def twofa_generate_secret(username: str) -> dict[str, str]:
     """Generate a TOTP secret and provisioning URI for a user."""
-    secret: str = base64.b32encode(secrets.token_bytes(20)).decode()
-    issuer: str = "Atulya Launch"
-    uri: str = f"otpauth://totp/{issuer}:{username}?secret={secret}&issuer={issuer}&digits=6&period=30"
-    cfg: dict[str, Any] = load_config()
-    twofa: dict[str, Any] = cfg.setdefault("twofa", {})
-    twofa[username] = {"secret": secret, "enabled": False, "backup_codes": []}
-    save_config(cfg)
-    return {"secret": secret, "uri": uri}
+    from .web.twofa_store import start_setup
+    return start_setup(username)
 
 
 def twofa_enable(username: str, code: str) -> dict[str, Any]:
     """Enable 2FA for a user after verifying a valid TOTP code."""
-    cfg: dict[str, Any] = load_config()
-    twofa: dict[str, Any] | None = cfg.get("twofa", {}).get(username)
-    if not twofa:
-        return {"ok": False, "error": "no pending 2FA setup"}
-    if _totp_verify(twofa["secret"], code):
-        twofa["enabled"] = True
-        codes: list[str] = [secrets.token_hex(4) for _ in range(10)]
-        twofa["backup_codes"] = codes
-        save_config(cfg)
-        return {"ok": True, "backup_codes": codes}
-    return {"ok": False, "error": "invalid code"}
+    from .web.twofa_store import enable
+    return enable(username, code)
 
 
 def twofa_disable(username: str, code: str) -> dict[str, bool]:
     """Disable 2FA for a user by verifying a TOTP code or backup code."""
-    cfg: dict[str, Any] = load_config()
-    twofa: dict[str, Any] | None = cfg.get("twofa", {}).get(username)
-    if not twofa or not twofa.get("enabled"):
-        return {"ok": False, "error": "2FA not enabled"}
-    if _totp_verify(twofa["secret"], code) or code in twofa.get("backup_codes", []):
-        del cfg["twofa"][username]
-        save_config(cfg)
-        return {"ok": True}
-    return {"ok": False, "error": "invalid code"}
+    from .web.twofa_store import disable
+    return disable(username, code)
 
 
 def twofa_status(username: str) -> dict[str, bool]:
     """Return whether 2FA is enabled for a user."""
-    cfg: dict[str, Any] = load_config()
-    twofa: dict[str, Any] | None = cfg.get("twofa", {}).get(username)
-    return {"enabled": twofa.get("enabled", False) if twofa else False}
+    from .web.twofa_store import is_enabled
+    return {"enabled": is_enabled(username)}
 
 
 def twofa_verify(username: str, code: str) -> bool:
     """Verify a TOTP code or backup code for a user."""
-    cfg: dict[str, Any] = load_config()
-    twofa: dict[str, Any] | None = cfg.get("twofa", {}).get(username)
-    if not twofa or not twofa.get("enabled"):
-        return True
-    if _totp_verify(twofa["secret"], code):
-        return True
-    if code in twofa.get("backup_codes", []):
-        twofa["backup_codes"].remove(code)
-        save_config(cfg)
-        return True
-    return False
-
-
-def _totp_verify(secret: str, code: str) -> bool:
-    """Verify a TOTP code against a shared secret (RFC 6238)."""
-    try:
-        import hmac, struct, time as _time
-        key: bytes = base64.b32decode(secret)
-        for offset in [-1, 0, 1]:
-            ts: int = int(_time.time() / 30) + offset
-            msg: bytes = struct.pack(">Q", ts)
-            digest: bytes = hmac.new(key, msg, "sha1").digest()
-            o: int = digest[19] & 15
-            token: int = (struct.unpack(">I", digest[o:o+4])[0] & 0x7FFFFFFF) % 1000000
-            if f"{token:06d}" == code:
-                return True
-        return False
-    except Exception:
-        return False
+    from .web.twofa_store import verify
+    return verify(username, code)
 
 
 def deploy_stop(app_id: int) -> dict[str, Any]:
@@ -2573,11 +2525,11 @@ def deploy_stop(app_id: int) -> dict[str, Any]:
 def cron_create(user_id: int, command: str, schedule: str = "0 0 * * *", domain: str | None = None) -> dict[str, bool]:
     """Create a new cron job in the database."""
     from .web.database import connect, audit_log
-    from datetime import datetime
+    from datetime import datetime, timezone
     with connect() as cur:
         cur.execute(
             "INSERT INTO cron_jobs (user_id, domain, command, schedule, enabled, created_at) VALUES (?, ?, ?, ?, 1, ?)",
-            (user_id, domain, command, schedule, datetime.utcnow().isoformat() + "Z"),
+            (user_id, domain, command, schedule, datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"),
         )
     audit_log("system", "cron.create", "ok", {"command": command[:60]})
     return {"ok": True}
@@ -2763,11 +2715,11 @@ def load_test(target_url: str, requests: int = 10, concurrency: int = 2) -> dict
 def server_create(name: str, host: str, port: int = 22, username: str = "root", auth_type: str = "password", auth_data: str | None = None) -> dict[str, Any]:
     """Register a new remote server for SSH management."""
     from .web.database import connect, audit_log
-    from datetime import datetime
+    from datetime import datetime, timezone
     with connect() as cur:
         cur.execute(
             "INSERT INTO servers (name, host, port, username, auth_type, auth_data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (name, host, port, username, auth_type, auth_data, datetime.utcnow().isoformat() + "Z"),
+            (name, host, port, username, auth_type, auth_data, datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"),
         )
     audit_log("system", "server.create", "ok", {"name": name, "host": host})
     return {"ok": True, "name": name}
@@ -2961,7 +2913,7 @@ def mail_create_account(domain: str, mailbox: str, password: str) -> dict[str, A
         stored_hash = hash_password(password)
     with connect() as cur:
         cur.execute("INSERT OR REPLACE INTO email_accounts (domain, mailbox, password_hash, quota_mb, created_at) VALUES (?, ?, ?, ?, ?)",
-                    (domain, mailbox, stored_hash, 1024, datetime.utcnow().isoformat() + "Z"))
+                    (domain, mailbox, stored_hash, 1024, datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"))
     return {"ok": True, "email": f"{mailbox}@{domain}"}
 
 
@@ -2997,7 +2949,7 @@ def backup_schedule_create(domain: str, schedule_type: str = "daily", retention:
         from .web.database import connect as db_connect
         with db_connect() as cur2:
             cur2.execute("INSERT INTO cron_jobs (user_id, domain, command, schedule, enabled, created_at) VALUES (?, ?, ?, ?, 1, ?)",
-                         (1, domain, command, schedule, datetime.utcnow().isoformat() + "Z"))
+                         (1, domain, command, schedule, datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"))
     return {"ok": True, "domain": domain, "schedule": schedule_type, "cron": schedule, "retention": retention}
 
 
@@ -3032,7 +2984,7 @@ def reseller_create(username: str, password: str, max_clients: int = 5, max_site
     with connect() as cur:
         uid: int = cur.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()["id"]
         cur.execute("INSERT OR REPLACE INTO reseller_allocations (reseller_id, max_clients, max_sites, max_dbs, max_emails, disk_limit_mb, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (uid, max_clients, max_sites, max_dbs, max_emails, disk_limit_mb, datetime.utcnow().isoformat() + "Z"))
+                    (uid, max_clients, max_sites, max_dbs, max_emails, disk_limit_mb, datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"))
     return {"ok": True, "username": username, "id": uid}
 
 
@@ -3072,7 +3024,7 @@ def reseller_create_client(reseller_id: int, username: str, password: str, plan_
         uid: int = cur.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()["id"]
         cur.execute("UPDATE users SET parent_user_id = ? WHERE id = ?", (reseller_id, uid))
         cur.execute("INSERT INTO reseller_clients (reseller_id, client_id, assigned_at) VALUES (?, ?, ?)",
-                    (reseller_id, uid, datetime.utcnow().isoformat() + "Z"))
+                    (reseller_id, uid, datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"))
         if plan_id:
             plan_assign(uid, plan_id)
     return {"ok": True, "username": username, "id": uid}

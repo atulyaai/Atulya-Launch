@@ -1,5 +1,6 @@
 """Subdomain management API — backed by SQLite."""
 
+import datetime
 import json
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
@@ -33,7 +34,7 @@ def list_subdomains(user: dict = Depends(get_current_user)):
 
 @router.post("")
 def create_subdomain(body: SubdomainCreate, user: dict = Depends(get_current_user)):
-    now = __import__("datetime").datetime.utcnow().isoformat() + "Z"
+    now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None).isoformat() + "Z"
     username = user.get("sub", "admin")
     try:
         with connect() as conn:

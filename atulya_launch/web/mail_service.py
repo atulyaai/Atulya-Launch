@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from atulya_launch.drivers import get_platform_driver
@@ -33,7 +33,7 @@ def create_account(domain: str, mailbox: str, password: str, quota_mb: int = 102
     with connect() as conn:
         cursor = conn.execute(
             "INSERT INTO email_accounts (domain, mailbox, password_hash, quota_mb, created_at) VALUES (?, ?, ?, ?, ?)",
-            (domain, mailbox, hash_password(password), quota_mb, datetime.utcnow().isoformat() + "Z"),
+            (domain, mailbox, hash_password(password), quota_mb, datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"),
         )
         account_id = int(cursor.lastrowid)
     apply = apply_domain(domain)

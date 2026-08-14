@@ -1,4 +1,5 @@
 """Routes for managing DNS zones and records."""
+import datetime
 from fastapi import APIRouter, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
@@ -37,7 +38,7 @@ async def zone_create(request: Request, domain: str = Form(...), soa_primary: st
     with connect() as cur:
         cur.execute(
             "INSERT INTO dns_zones (domain, soa_primary, soa_email, created_at) VALUES (?, ?, ?, ?)",
-            (domain, soa_primary, soa_email, __import__("datetime").datetime.utcnow().isoformat() + "Z"),
+            (domain, soa_primary, soa_email, datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None).isoformat() + "Z"),
         )
     audit_log(request.state.user["username"], "dns.zone_create", "ok", {"domain": domain})
     dns_service.apply_zone(domain)
@@ -65,7 +66,7 @@ async def record_create(request: Request, zone_id: int = Form(...), name: str = 
     with connect() as cur:
         cur.execute(
             "INSERT INTO dns_records (zone_id, name, type, value, ttl, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (zone_id, name, record_type, value, ttl, __import__("datetime").datetime.utcnow().isoformat() + "Z"),
+            (zone_id, name, record_type, value, ttl, datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None).isoformat() + "Z"),
         )
     audit_log(request.state.user["username"], "dns.record_create", "ok", {"zone_id": zone_id, "name": name, "type": record_type})
     with connect() as cur:

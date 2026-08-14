@@ -1,4 +1,5 @@
 """Routes for managing SSL certificates."""
+import datetime
 from fastapi import APIRouter, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
@@ -33,7 +34,7 @@ async def ssl_issue(request: Request, domain: str = Form(...)) -> RedirectRespon
     with connect() as cur:
         cur.execute(
             "INSERT INTO ssl_certs (domain, cert_path, key_path, issuer, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (domain, result.get("cert_path"), result.get("key_path"), "Let's Encrypt", result.get("expires_at"), __import__("datetime").datetime.utcnow().isoformat() + "Z"),
+            (domain, result.get("cert_path"), result.get("key_path"), "Let's Encrypt", result.get("expires_at"), datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None).isoformat() + "Z"),
         )
     audit_log(request.state.user["username"], "ssl.issue", "ok", {"domain": domain})
     return RedirectResponse("/ssl", status_code=302)

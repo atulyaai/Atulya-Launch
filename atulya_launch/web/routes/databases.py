@@ -1,4 +1,5 @@
 """Routes for managing databases."""
+import datetime
 from fastapi import APIRouter, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
@@ -35,7 +36,7 @@ async def db_create(request: Request, name: str = Form(...), db_type: str = Form
     with connect() as cur:
         cur.execute(
             "INSERT INTO databases (name, db_type, username, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
-            (name, db_type, username or None, pw_hash, __import__("datetime").datetime.utcnow().isoformat() + "Z"),
+            (name, db_type, username or None, pw_hash, datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None).isoformat() + "Z"),
         )
     core.database_create(name, db_type)
     audit_log(request.state.user["username"], "database.create", "ok", {"name": name, "type": db_type})

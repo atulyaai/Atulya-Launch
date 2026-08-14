@@ -58,7 +58,7 @@ def create_account(body: AccountCreate, user: dict = Depends(get_current_user)):
             raise HTTPException(status_code=409, detail="Account already exists")
         conn.execute(
             "INSERT INTO email_accounts (domain, mailbox, password_hash, quota_mb, created_at) VALUES (?, ?, ?, ?, ?)",
-            (domain, mailbox, pw_hash, body.quota_mb, datetime.datetime.utcnow().isoformat() + "Z"),
+            (domain, mailbox, pw_hash, body.quota_mb, datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None).isoformat() + "Z"),
         )
     _apply_mail_config(domain)
     return {"status": "created", "email": body.email}

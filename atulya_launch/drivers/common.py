@@ -410,6 +410,7 @@ php_admin_flag[log_errors] = on
     def status(self, version: str) -> ApplyResult:
         """Check PHP-FPM service status."""
         service_name = f"php{version}-fpm"
+        return self.service.status(service_name)
 
 
 @dataclass(slots=True)
@@ -527,4 +528,3 @@ class PlannedFirewallDriver:
 
     def list_rules(self) -> ApplyResult:
         return run_command(["ufw", "status", "numbered"], self.dry_run)
-        return self.service.status(service_name)

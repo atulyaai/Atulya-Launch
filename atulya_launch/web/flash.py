@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from starlette.requests import Request
@@ -17,7 +17,7 @@ def add_flash(session_token: str | None, message: str, category: str = "info") -
     with connect() as conn:
         conn.execute(
             "INSERT INTO flash_messages (session_token, category, message, created_at) VALUES (?, ?, ?, ?)",
-            (session_token, category, message, datetime.utcnow().isoformat() + "Z"),
+            (session_token, category, message, datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"),
         )
 
 

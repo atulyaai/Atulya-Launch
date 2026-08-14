@@ -1,5 +1,6 @@
 """URL redirect management API — backed by SQLite."""
 
+import datetime
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -34,7 +35,7 @@ def list_redirects(user: dict = Depends(get_current_user)):
 def create_redirect(body: RedirectCreate, user: dict = Depends(get_current_user)):
     if body.redirect_type not in (301, 302, 307):
         raise HTTPException(status_code=400, detail="Redirect type must be 301, 302, or 307")
-    now = __import__("datetime").datetime.utcnow().isoformat() + "Z"
+    now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None).isoformat() + "Z"
     username = user.get("sub", "admin")
     with connect() as conn:
         cursor = conn.execute(

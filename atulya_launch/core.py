@@ -1357,11 +1357,12 @@ def fail2ban_status() -> dict[str, Any]:
     """Return fail2ban installation and jail status."""
     if utils.get_platform() != "linux":
         return {"installed": False, "active": False, "jails": []}
-    result: subprocess.CompletedProcess = run_cmd(["fail2ban-client", "status"], check=False)
-    if result.returncode != 0:
+    from atulya_launch.drivers import get_platform_driver
+    result = get_platform_driver(dry_run=False).firewall.fail2ban_status()
+    if not result.ok:
         return {"installed": False, "active": False, "jails": []}
     jails: list[str] = []
-    for line in result.stdout.splitlines():
+    for line in result.message.splitlines():
         if "Jail list" in line:
             jails = [j.strip() for j in line.split(":", 1)[1].split(",")]
     return {"installed": True, "active": True, "jails": jails}
@@ -2608,35 +2609,29 @@ def comprehensive_security_audit() -> dict[str, Any]:
     else:
         results.append({"check": "Bind Address", "status": "pass", "message": f"Panel bound to {bind}"})
     if sys.platform == "linux":
-        try:
-            r: subprocess.CompletedProcess = subprocess.run(["ufw", "status"], capture_output=True, text=True, timeout=10)
-            if "active" in r.stdout.lower():
-                results.append({"check": "Firewall", "status": "pass", "message": "UFW is active"})
-            else:
-                results.append({"check": "Firewall", "status": "warn", "message": "UFW is not active"})
-                score -= 10
-        except FileNotFoundError:
-            results.append({"check": "Firewall", "status": "warn", "message": "UFW not installed"})
+        from atulya_launch.drivers import get_platform_driver
+        driver = get_platform_driver(dry_run=False)
+        # Firewall
+        fw = driver.firewall.status()
+        if fw.ok and "active" in fw.message.lower():
+            results.append({"check": "Firewall", "status": "pass", "message": "UFW is active"})
+        else:
+            results.append({"check": "Firewall", "status": "warn", "message": "UFW is not active"})
             score -= 10
-        try:
-            r = subprocess.run(["fail2ban-client", "status"], capture_output=True, text=True, timeout=10)
-            if r.returncode == 0:
-                results.append({"check": "Fail2Ban", "status": "pass", "message": "Fail2Ban is running"})
-            else:
-                results.append({"check": "Fail2Ban", "status": "warn", "message": "Fail2Ban is not running"})
-                score -= 5
-        except FileNotFoundError:
-            results.append({"check": "Fail2Ban", "status": "warn", "message": "Fail2Ban not installed"})
+        # Fail2Ban
+        f2b = driver.firewall.fail2ban_status()
+        if f2b.ok:
+            results.append({"check": "Fail2Ban", "status": "pass", "message": "Fail2Ban is running"})
+        else:
+            results.append({"check": "Fail2Ban", "status": "warn", "message": "Fail2Ban is not running"})
             score -= 5
-        try:
-            r = subprocess.run(["nginx", "-t"], capture_output=True, text=True, timeout=10)
-            if r.returncode == 0:
-                results.append({"check": "Nginx Config", "status": "pass", "message": "Nginx configuration is valid"})
-            else:
-                results.append({"check": "Nginx Config", "status": "error", "message": r.stderr.strip()[:200]})
-                score -= 15
-        except FileNotFoundError:
-            pass
+        # Nginx Config via driver
+        nginx_check = driver.web.test_config()
+        if nginx_check.ok:
+            results.append({"check": "Nginx Config", "status": "pass", "message": "Nginx configuration is valid"})
+        else:
+            results.append({"check": "Nginx Config", "status": "error", "message": nginx_check.message[:200]})
+            score -= 15
     from .web.database import connect
     panels: list[str] = ["root", "admin", "test", "demo", "user"]
     with connect() as cur:
@@ -2874,9 +2869,15 @@ def mail_get_status(domain: str) -> dict[str, Any]:
     """Return the active status of Postfix, Dovecot, and OpenDKIM."""
     result: dict[str, Any] = {"postfix": False, "dovecot": False, "opendkim": False, "dns": []}
     if utils.is_linux():
-        for svc in ["postfix", "dovecot", "opendkim"]:
-            r = run_cmd(["systemctl", "is-active", svc])
-            result[svc] = r.stdout.strip() == "active"
+        from atulya_launch.drivers import get_platform_driver
+        result = get_platform_driver(dry_run=False).mail.status()
+        if result.ok and result.message:
+            # Parse message like "postfix=..., dovecot=..., opendkim=..."
+            for part in result.message.split(", "):
+                if "=" in part:
+                    k, v = part.split("=", 1)
+                    if k in result:
+                        result[k] = "active" in v.lower()
     return result
 
 
@@ -2886,17 +2887,17 @@ def mail_create_account(domain: str, mailbox: str, password: str) -> dict[str, A
     from .web.auth import hash_password
     if not utils.is_linux():
         return {"ok": False, "error": "only supported on Linux"}
-    vhost_dir: Path = Path(f"/var/mail/vhosts/{domain}/{mailbox}")
-    vhost_dir.mkdir(parents=True, exist_ok=True)
-    pw_hash = run_cmd(["doveadm", "pw", "-s", "SHA512-CRYPT", "-p", password])
-    if pw_hash.returncode == 0:
-        stored_hash: str = pw_hash.stdout.strip()
-    else:
-        stored_hash = hash_password(password)
-    with connect() as cur:
-        cur.execute("INSERT OR REPLACE INTO email_accounts (domain, mailbox, password_hash, quota_mb, created_at) VALUES (?, ?, ?, ?, ?)",
-                    (domain, mailbox, stored_hash, 1024, datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"))
-    return {"ok": True, "email": f"{mailbox}@{domain}"}
+    email = f"{mailbox}@{domain}"
+    from atulya_launch.drivers import get_platform_driver
+    result = get_platform_driver(dry_run=False).mail.create_account(email, password)
+    if result.ok:
+        # Also store in database
+        pw_hash = hash_password(password)
+        with connect() as cur:
+            cur.execute("INSERT OR REPLACE INTO email_accounts (domain, mailbox, password_hash, quota_mb, created_at) VALUES (?, ?, ?, ?, ?)",
+                        (domain, mailbox, pw_hash, 1024, datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"))
+        return {"ok": True, "email": email}
+    return {"ok": False, "error": result.message or "driver create_account failed"}
 
 
 def _get_public_ip() -> str:

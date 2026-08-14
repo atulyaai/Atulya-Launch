@@ -350,6 +350,72 @@ class PlannedMailDriver:
             files=[target.as_posix()],
         )
 
+    def status(self) -> ApplyResult:
+        """Check Postfix and Dovecot service status."""
+        postfix = self.service.status("postfix")
+        dovecot = self.service.status("dovecot")
+        opendkim = self.service.status("opendkim")
+        return ApplyResult(
+            ok=postfix.ok and dovecot.ok and opendkim.ok,
+            action="mail.status",
+            message=f"postfix={postfix.message}, dovecot={dovecot.message}, opendkim={opendkim.message}",
+            commands=[*postfix.commands, *dovecot.commands, *opendkim.commands],
+        )
+
+    def create_account(self, email: str, password: str) -> ApplyResult:
+        """Create a mail account (adds to virtual_mailboxes and dovecot passwd)."""
+        # Parse email
+        if "@" not in email:
+            return ApplyResult(ok=False, action="mail.create_account", message="invalid email format")
+        mailbox, domain = email.split("@", 1)
+        target = self.config_dir / "virtual_mailboxes"
+        dovecot_passwd = Path("/etc/dovecot/passwd")
+
+        new_vmailbox = f"{mailbox}@{domain} {domain}/{mailbox}/"
+        # Generate dovecot passwd entry (simple BLF-CRYPT)
+        import crypt
+        import secrets
+        salt = secrets.token_bytes(16)
+        hashed = crypt.crypt(password, f"$5${salt.hex()}$")
+
+        commands = []
+        if not self.dry_run:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            # Update virtual_mailboxes
+            existing = ""
+            if target.exists():
+                existing = target.read_text(encoding="utf-8")
+            other_domains = [
+                line for line in existing.splitlines()
+                if line.strip() and not line.strip().endswith(f"@{domain} ")
+            ]
+            target.write_text("\n".join(other_domains + [new_vmailbox]) + "\n", encoding="utf-8")
+            commands.append(f"echo '{new_vmailbox}' >> {target}")
+
+            # Update dovecot passwd
+            dovecot_passwd.parent.mkdir(parents=True, exist_ok=True)
+            existing_passwd = ""
+            if dovecot_passwd.exists():
+                existing_passwd = dovecot_passwd.read_text(encoding="utf-8")
+            other_accounts = [
+                line for line in existing_passwd.splitlines()
+                if line.strip() and not line.startswith(f"{email}:")
+            ]
+            new_entry = f"{email}:{hashed}"
+            dovecot_passwd.write_text("\n".join(other_accounts + [new_entry]) + "\n", encoding="utf-8")
+            commands.append(f"echo '{new_entry}' >> {dovecot_passwd}")
+
+        # Reload services
+        postfix = self.service.reload("postfix")
+        dovecot = self.service.reload("dovecot")
+        return ApplyResult(
+            ok=postfix.ok and dovecot.ok,
+            action="mail.create_account",
+            changed=not self.dry_run,
+            commands=[*commands, *postfix.commands, *dovecot.commands],
+            files=[target.as_posix(), dovecot_passwd.as_posix()],
+        )
+
 
 @dataclass(slots=True)
 class PhpFpmDriver:
@@ -528,3 +594,19 @@ class PlannedFirewallDriver:
 
     def list_rules(self) -> ApplyResult:
         return run_command(["ufw", "status", "numbered"], self.dry_run)
+
+    # Fail2Ban methods
+    def fail2ban_status(self) -> ApplyResult:
+        return run_command(["fail2ban-client", "status"], self.dry_run)
+
+    def fail2ban_jail_status(self, jail: str = "sshd") -> ApplyResult:
+        return run_command(["fail2ban-client", "status", jail], self.dry_run)
+
+    def fail2ban_restart(self) -> ApplyResult:
+        return self._service_action("restart", "fail2ban")
+
+    def fail2ban_unban(self, ip: str, jail: str = "sshd") -> ApplyResult:
+        return run_command(["fail2ban-client", "set", jail, "unbanip", ip], self.dry_run)
+
+    def _service_action(self, action: str, service: str) -> ApplyResult:
+        return run_command(["systemctl", action, service], self.dry_run)

@@ -5,7 +5,7 @@
 
 <div align="center">
   <h1>
-    <img src="https://readme-typing-svg.herokuapp.com?font=Cinzel&weight=700&size=40&duration=4000&pause=1000&color=4DFBFF&center=true&vCenter=true&width=700&height=75&lines=ATULYA+LAUNCH;SELF-HOSTED+SERVER+CONTROL+PANEL;OPEN-SOURCE+CPANEL+ALTERNATIVE;अतुल्य+लॉन्च" alt="Atulya Launch — Server Control Panel" />
+    <img src="https://readme-typing-svg.herokuapp.com?font=Cinzel&weight=700&size=40&duration=4000&pause=1000&color=F7931A&center=true&vCenter=true&width=700&height=75&lines=ATULYA+LAUNCH;SELF-HOSTED+SERVER+CONTROL+PANEL;OPEN-SOURCE+CPANEL+ALTERNATIVE;अतुल्य+लॉन्च" alt="Atulya Launch — Server Control Panel" />
   </h1>
 </div>
 
@@ -15,8 +15,8 @@
 </p>
 
 <p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-0d1117?style=for-the-badge&logoColor=4DFBFF&labelColor=0d1117&color=4DFBFF" alt="License"/></a>
-  <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.11+-0d1117?style=for-the-badge&logo=python&logoColor=4DFBFF&labelColor=0d1117&color=4DFBFF" alt="Python"/></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-0d1117?style=for-the-badge&logoColor=4DFBFF&labelColor=0d1117&color=F7931A" alt="License"/></a>
+  <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.11+-0d1117?style=for-the-badge&logo=python&logoColor=4DFBFF&labelColor=0d1117&color=F7931A" alt="Python"/></a>
   <a href="https://fastapi.tiangolo.com"><img src="https://img.shields.io/badge/FastAPI-0.110+-0d1117?style=for-the-badge&logo=fastapi&logoColor=10b981&labelColor=0d1117&color=10b981" alt="FastAPI"/></a>
   <a href="https://nginx.org"><img src="https://img.shields.io/badge/Engine-Nginx-0d1117?style=for-the-badge&logo=nginx&logoColor=009639&labelColor=0d1117&color=009639" alt="Nginx"/></a>
   <a href="https://docker.com"><img src="https://img.shields.io/badge/Docker-Ready-0d1117?style=for-the-badge&logo=docker&logoColor=2496ED&labelColor=0d1117&color=2496ED" alt="Docker"/></a>

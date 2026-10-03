@@ -1,6 +1,6 @@
 <!-- Hero Banner -->
 <div align="center">
-  <img src="assets/atulya-hero.png" alt="Atulya Launch - Self-Hosted Server Panel" width="100%"/>
+  <img src="assets/launch_hero.jpg" alt="Atulya Launch - Self-Hosted Server Panel" width="100%"/>
 </div>
 
 <div align="center">

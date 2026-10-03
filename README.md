@@ -454,6 +454,6 @@ reproduction steps, impact, and suggested fix.
 - `/api/v1/meta` + `/api/v1/health`; OpenAPI 3.1 spec at `/api/openapi.json`.
 - Test suite grew to **152 passing** (was 140).
 
-## License
+## 📜 License
 
 MIT License. Copyright (c) 2026 Atulya AI (atulyaai). See [LICENSE](LICENSE).

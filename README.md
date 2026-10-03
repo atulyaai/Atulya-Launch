@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-0d1117?style=for-the-badge&logoColor=4DFBFF&labelColor=0d1117&color=F7931A" alt="License"/></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-F7931A.svg?style=flat-square" alt="MIT License"/></a>
   <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.11+-0d1117?style=for-the-badge&logo=python&logoColor=4DFBFF&labelColor=0d1117&color=F7931A" alt="Python"/></a>
   <a href="https://fastapi.tiangolo.com"><img src="https://img.shields.io/badge/FastAPI-0.110+-0d1117?style=for-the-badge&logo=fastapi&logoColor=10b981&labelColor=0d1117&color=10b981" alt="FastAPI"/></a>
   <a href="https://nginx.org"><img src="https://img.shields.io/badge/Engine-Nginx-0d1117?style=for-the-badge&logo=nginx&logoColor=009639&labelColor=0d1117&color=009639" alt="Nginx"/></a>
@@ -456,4 +456,4 @@ reproduction steps, impact, and suggested fix.
 
 ## License
 
-MIT License. See [LICENSE](LICENSE).
+MIT License. Copyright (c) 2026 Atulya AI (atulyaai). See [LICENSE](LICENSE).

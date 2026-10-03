@@ -454,6 +454,22 @@ reproduction steps, impact, and suggested fix.
 - `/api/v1/meta` + `/api/v1/health`; OpenAPI 3.1 spec at `/api/openapi.json`.
 - Test suite grew to **152 passing** (was 140).
 
+---
+
+## 🤝 Contributing
+
+Contributions, bug reports, and ideas are welcome!
+
+1. **Fork** the repository
+2. **Create** a feature branch: `git checkout -b feat/your-feature`
+3. **Commit** your changes: `git commit -m "feat: add your feature"`
+4. **Push** and open a **Pull Request**
+
+Please keep PRs focused and include tests where relevant.  
+For major changes, open an issue first to discuss what you'd like to change.
+
+> All contributions are released under the [MIT License](LICENSE).
+
 ## 📜 License
 
 MIT License. Copyright (c) 2026 Atulya AI (atulyaai). See [LICENSE](LICENSE).

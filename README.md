@@ -1,11 +1,46 @@
-# Atulya Launch
+<!-- Hero Banner -->
+<div align="center">
+  <img src="assets/atulya-hero.png" alt="Atulya Launch - Self-Hosted Server Panel" width="100%"/>
+</div>
 
-![Atulya Launch Banner](assets/atulya-hero.png)
+<div align="center">
+  <h1>
+    <img src="https://readme-typing-svg.herokuapp.com?font=Cinzel&weight=700&size=40&duration=4000&pause=1000&color=4DFBFF&center=true&vCenter=true&width=700&height=75&lines=ATULYA+LAUNCH;SELF-HOSTED+SERVER+CONTROL+PANEL;OPEN-SOURCE+CPANEL+ALTERNATIVE;अतुल्य+लॉन्च" alt="Atulya Launch — Server Control Panel" />
+  </h1>
+</div>
 
-Atulya Launch is a **self-hosted server management panel** and CLI for managing
-websites, databases, email, DNS, SSL, firewalls, Docker containers, and more.
-It is designed as a lightweight, open-source alternative to cPanel, Plesk,
-HestiaCP, and aaPanel.
+<p align="center">
+  <em><strong>अतुल्य</strong> (Atulya) — Peerless &nbsp;·&nbsp; <strong>Launch</strong> — Deploy, orchestrate, govern</em><br/>
+  <strong>A lightweight, open-source alternative to cPanel, Plesk, HestiaCP, and aaPanel for self-hosted servers, Docker containers, and web stacks.</strong>
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-0d1117?style=for-the-badge&logoColor=4DFBFF&labelColor=0d1117&color=4DFBFF" alt="License"/></a>
+  <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.11+-0d1117?style=for-the-badge&logo=python&logoColor=4DFBFF&labelColor=0d1117&color=4DFBFF" alt="Python"/></a>
+  <a href="https://fastapi.tiangolo.com"><img src="https://img.shields.io/badge/FastAPI-0.110+-0d1117?style=for-the-badge&logo=fastapi&logoColor=10b981&labelColor=0d1117&color=10b981" alt="FastAPI"/></a>
+  <a href="https://nginx.org"><img src="https://img.shields.io/badge/Engine-Nginx-0d1117?style=for-the-badge&logo=nginx&logoColor=009639&labelColor=0d1117&color=009639" alt="Nginx"/></a>
+  <a href="https://docker.com"><img src="https://img.shields.io/badge/Docker-Ready-0d1117?style=for-the-badge&logo=docker&logoColor=2496ED&labelColor=0d1117&color=2496ED" alt="Docker"/></a>
+  <img src="https://img.shields.io/badge/Made_in-India_🇮🇳-0d1117?style=for-the-badge&logoColor=FF9933&labelColor=0d1117&color=FF9933" alt="Made in India"/>
+</p>
+
+```
+ ┌─────────────────────────────────────────────────────────────────────────────┐
+ │                           ATULYA LAUNCH ARCHITECTURE                        │
+ ├─────────────────────────────────────────────────────────────────────────────┤
+ │   🌐 Browser Dashboard / CLI  ──► FastAPI Async Core (628 Mounted Routes)   │
+ │                                            │                                │
+ │         ┌──────────────────────────────────┼────────────────────────────────┐
+ │         ▼                                  ▼                                ▼
+ │   ⚡ Nginx Config Engine             🔒 Security & SSL              📦 Containers
+ │   Sites · Reverse Proxy · PHP-FPM   Let's Encrypt · 2FA · UFW       Docker Orchestration
+ │         │                                  │                                │
+ │         └──────────────────────────────────┼────────────────────────────────┘
+ │                                            ▼                                
+ │   📧 Mail Stack (Postfix / Dovecot)   ·   🖥️ SSH Terminal (AsyncSSH / WS)   │
+ └─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
 
 > **Status: feature-complete MVP, hardening for clean-host install.** The panel
 > ships a working FastAPI app, CLI, full auth/session/2FA layer, audit logging,

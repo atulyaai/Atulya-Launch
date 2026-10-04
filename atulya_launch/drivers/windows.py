@@ -25,7 +25,7 @@ class WindowsDriver:
     def __post_init__(self) -> None:
         self.services = PlannedServiceDriver("windows", dry_run=self.dry_run)
         self.packages = PlannedPackageDriver(["winget", "install"], dry_run=self.dry_run)
-        self.web = FileWebServerDriver("caddy", self.config_root / "caddy" / "sites", self.services, self.dry_run)
+        self.web = FileWebServerDriver("caddy", self.config_root / "caddy" / "sites", self.services, self.dry_run, test_command=("caddy", "validate"), detect_command=("caddy", "version"))
         self.dns = BindDnsDriver(self.config_root / "bind" / "zones", self.services, self.dry_run)
         self.mail = PlannedMailDriver(self.config_root / "mail", self.services, self.dry_run)
         self.php_fpm = PhpFpmDriver(self.config_root / "php", self.services, self.dry_run)

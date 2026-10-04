@@ -25,7 +25,7 @@ class MacOSDriver:
     def __post_init__(self) -> None:
         self.services = PlannedServiceDriver("launchd", dry_run=self.dry_run)
         self.packages = PlannedPackageDriver(["brew", "install"], dry_run=self.dry_run)
-        self.web = FileWebServerDriver("caddy", Path("/usr/local/etc/caddy/sites"), self.services, self.dry_run)
+        self.web = FileWebServerDriver("caddy", Path("/usr/local/etc/caddy/sites"), self.services, self.dry_run, test_command=("caddy", "validate"), detect_command=("caddy", "version"))
         self.dns = BindDnsDriver(Path("/usr/local/etc/bind/zones"), self.services, self.dry_run)
         self.mail = PlannedMailDriver(Path("/usr/local/etc/postfix"), self.services, self.dry_run)
         self.php_fpm = PhpFpmDriver(Path("/usr/local/etc/php"), self.services, self.dry_run)

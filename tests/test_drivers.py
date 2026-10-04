@@ -155,3 +155,34 @@ class TestDriverRejectsNonLinux(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestWebServerRollback(unittest.TestCase):
+    def _driver(self, tmp, test_command):
+        from pathlib import Path
+
+        from atulya_launch.drivers.common import FileWebServerDriver, PlannedServiceDriver
+
+        svc = PlannedServiceDriver("systemd", dry_run=False)
+        return FileWebServerDriver("nginx", Path(tmp), svc, dry_run=False, test_command=test_command)
+
+    def test_failed_config_test_restores_previous_file(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            good = self._driver(tmp, ("true",))
+            self.assertTrue(good.apply_site("a.com", "old").ok)
+            bad = self._driver(tmp, ("false",))
+            result = bad.apply_site("a.com", "broken")
+            self.assertFalse(result.ok)
+            self.assertEqual(Path(tmp, "a.com.conf").read_text(), "old")
+
+    def test_failed_config_test_removes_new_file(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result = self._driver(tmp, ("false",)).apply_site("new.com", "broken")
+            self.assertFalse(result.ok)
+            self.assertFalse(Path(tmp, "new.com.conf").exists())

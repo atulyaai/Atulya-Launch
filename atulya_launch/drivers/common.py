@@ -160,16 +160,33 @@ class FileWebServerDriver:
     detect_command: tuple[str, ...] = ("nginx", "-v")
 
     def apply_site(self, domain: str, config: str) -> ApplyResult:
+        """Write a vhost, validating it and restoring the previous file on failure."""
         target = self.config_dir / f"{domain}.conf"
-        if not self.dry_run:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(config, encoding="utf-8")
-        return ApplyResult(
-            ok=True,
-            action=f"{self.name}.apply_site",
-            changed=not self.dry_run,
-            files=[target.as_posix()],
-        )
+        if self.dry_run:
+            return ApplyResult(ok=True, action=f"{self.name}.apply_site", changed=False, files=[target.as_posix()])
+        previous = target.read_text(encoding="utf-8") if target.exists() else None
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(config, encoding="utf-8")
+        check = self.test_config()
+        if not check.ok and not check.message.startswith("command not found"):
+            self.rollback_site(domain, previous)
+            return ApplyResult(
+                ok=False,
+                action=f"{self.name}.apply_site",
+                changed=False,
+                message=f"config test failed, rolled back: {check.message}",
+                files=[target.as_posix()],
+                commands=check.commands,
+            )
+        return ApplyResult(ok=True, action=f"{self.name}.apply_site", changed=True, files=[target.as_posix()])
+
+    def rollback_site(self, domain: str, previous: str | None) -> None:
+        """Restore a vhost to its previous content (or remove it if it was new)."""
+        target = self.config_dir / f"{domain}.conf"
+        if previous is None:
+            target.unlink(missing_ok=True)
+        else:
+            target.write_text(previous, encoding="utf-8")
 
     def reload(self) -> ApplyResult:
         return self.service.reload(self.name)

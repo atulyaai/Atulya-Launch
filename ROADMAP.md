@@ -42,7 +42,8 @@ Detailed phase scaffolds live in [docs/production-plan](docs/production-plan/REA
   cms_installer, security_advisor, analytics.
 - **WHM-style controls**: feature groups + per-user overrides and an IP pool
   (`/api/feature-manager`).
-- **macOS/Windows drivers**: 1.4 KB dataclass shells only — not implemented.
+- **macOS/Windows**: drivers plan Caddy/brew/winget commands; `scripts/install-macos.sh` and `scripts/install-windows.ps1` exist but are untested on real hosts.
+- **Driver contract**: documented in `docs/production-plan/driver-contract.md`; `web.apply_site` rolls back on failed config test.
 - **Driver consolidation**: feature modules still call `utils.run_command`
   directly in places instead of going through the driver layer.
 

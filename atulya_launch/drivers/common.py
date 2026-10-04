@@ -13,7 +13,16 @@ def run_command(command: list[str], dry_run: bool = True) -> ApplyResult:
     """Run or plan a command."""
     if dry_run:
         return ApplyResult(ok=True, action="plan", changed=False, commands=[command])
-    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
+    except FileNotFoundError:
+        return ApplyResult(
+            ok=False,
+            action="run",
+            changed=False,
+            message=f"command not found: {command[0]}",
+            commands=[command],
+        )
     return ApplyResult(
         ok=result.returncode == 0,
         action="run",
